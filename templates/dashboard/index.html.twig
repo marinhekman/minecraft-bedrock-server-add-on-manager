@@ -4,16 +4,73 @@
 
 {% block body %}
 <div class="container">
-    <h1>Welcome to MC Add-on Manager</h1>
-    <p>Manage behaviour and resource packs across your Minecraft Bedrock servers.</p>
+    <h1>🧱 MC Add-on Manager</h1>
 
-    <div class="card">
-        <h2>⚙️ Setup</h2>
-        <p>Your manager is up and running. Next steps:</p>
-        <ul>
-            <li>Mount your <code>minecraft-data</code> folders into <code>/mc-data/</code></li>
-            <li>Make sure <code>/var/run/docker.sock</code> is mounted so servers can be restarted</li>
-        </ul>
-    </div>
+    {% if serverData is empty %}
+        <div class="card card--empty">
+            <p>No servers found. Make sure your <code>minecraft-data</code> folders are mounted under <code>/mc-data/</code>.</p>
+        </div>
+    {% else %}
+        {% for data in serverData %}
+            {% set server = data.server %}
+            <div class="card">
+                <div class="card__header">
+                    <h2>🖥️ {{ server.name }}</h2>
+                    <div class="card__meta">
+                        {% if server.containerName %}
+                            <span class="badge badge--container">🐳 {{ server.containerName }}</span>
+                        {% endif %}
+                        {% if server.port %}
+                            <span class="badge badge--port">:{{ server.port }}</span>
+                        {% endif %}
+                        {% if server.isRunning %}
+                            <span class="badge badge--enabled">● Running</span>
+                        {% else %}
+                            <span class="badge badge--disabled">● Stopped</span>
+                        {% endif %}
+                        <span class="badge badge--enabled">{{ data.enabledCount }} enabled</span>
+                        <span class="badge badge--disabled">{{ data.disabledCount }} disabled</span>
+                    </div>
+                </div>
+
+                {% if data.packs is empty %}
+                    <p class="muted">No add-ons installed yet.</p>
+                {% else %}
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Type</th>
+                                <th>Version</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for pack in data.packs %}
+                                <tr>
+                                    <td>{{ pack.manifest.name }}</td>
+                                    <td>
+                                        {% if pack.manifest.type.value == 'data' %}
+                                            🔧 Behaviour
+                                        {% else %}
+                                            🎨 Resource
+                                        {% endif %}
+                                    </td>
+                                    <td><code>{{ pack.manifest.versionString }}</code></td>
+                                    <td>
+                                        {% if pack.enabled %}
+                                            <span class="badge badge--enabled">Enabled</span>
+                                        {% else %}
+                                            <span class="badge badge--disabled">Disabled</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                {% endif %}
+            </div>
+        {% endfor %}
+    {% endif %}
 </div>
 {% endblock %}

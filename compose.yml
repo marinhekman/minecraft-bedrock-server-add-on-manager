@@ -10,17 +10,17 @@ services:
       SERVER_NAME: ${SERVER_NAME:-localhost}, php:80
       DEFAULT_URI: https://${SERVER_NAME:-localhost}:${HTTPS_PORT:-443}
       APP_SECRET: ${APP_SECRET:-!ChangeThisSymfonySecret!}
-      # The two next lines can be removed after initial installation
       SYMFONY_VERSION: ${SYMFONY_VERSION:-}
       STABILITY: ${STABILITY:-stable}
     volumes:
       # ── Minecraft data folders ──────────────────────────────────────────────
-      # Mount each server's minecraft-data folder under /mc-data/<name>.
+      # Mount each server's minecraft-data folder under /mc-data/<n>.
       # The app scans /mc-data/ at runtime — add/remove entries here to
       # control which servers are managed.
-      # Host layout convention: /opt/<server-name>/minecraft-data
-      - /opt/mc-server1/minecraft-data:/mc-data/server1
-      - /opt/mc-server2/minecraft-data:/mc-data/server2
+      # Define host paths in your .env file, e.g.:
+      # MC_DATA_SERVER1=/home/user/minecraft-data
+      - ${MC_DATA_SERVER1}:/mc-data/server1
+      # - ${MC_DATA_SERVER2}:/mc-data/server2
 
       # ── Docker socket ───────────────────────────────────────────────────────
       # Used to discover running itzg/minecraft-bedrock-server containers
@@ -47,3 +47,4 @@ services:
 volumes:
   caddy_data:
   caddy_config:
+

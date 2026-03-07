@@ -22,7 +22,6 @@ RUN set -eux; \
 	apt-get install -y --no-install-recommends \
 		file \
 		git \
-		docker.io \
 	; \
 	rm -rf /var/lib/apt/lists/*; \
 	install-php-extensions \
