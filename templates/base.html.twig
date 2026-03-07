@@ -9,27 +9,34 @@
         {{ importmap('app') }}
     {% endblock %}
 </head>
-<body>
-    <nav>
-        <div class="nav-brand">
-            <span class="nav-icon">🧱</span>
-            <span class="nav-title">MC Add-on Manager</span>
+<body class="bg-light">
+
+    <nav class="navbar navbar-dark bg-dark mb-4">
+        <div class="container">
+            <span class="navbar-brand fw-bold">🧱 MC Add-on Manager</span>
         </div>
     </nav>
 
-    <main>
+    <main class="container pb-5">
         {% for message in app.flashes('success') %}
-            <div class="flash flash--success">{{ message }}</div>
+            <div class="alert alert-success alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
         {% endfor %}
         {% for message in app.flashes('error') %}
-            <div class="flash flash--error">{{ message }}</div>
+            <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
         {% endfor %}
 
         {% block body %}{% endblock %}
     </main>
 
-    <footer>
-        <p>Minecraft Bedrock Add-on Manager</p>
+    <footer class="bg-dark text-secondary text-center py-3 mt-4">
+        <small>Minecraft Bedrock Add-on Manager</small>
     </footer>
+
 </body>
 </html>
