@@ -100,14 +100,53 @@ class AddonInstaller
         $destDir   = $targetDir . '/' . $this->sanitizeFolderName($manifest);
 
         if (is_dir($destDir)) {
-            throw new \RuntimeException(sprintf(
-                'Add-on "%s" is already installed.', $manifest->name
-            ));
+            // Check version of existing install
+            $existingManifestPath = $destDir . '/manifest.json';
+            if (file_exists($existingManifestPath)) {
+                $existing = $this->manifestParser->parseFile($existingManifestPath);
+                $cmp = $this->compareVersions($manifest->version, $existing->version);
+
+                if ($cmp === 0) {
+                    throw new \RuntimeException(sprintf(
+                        '"%s" version %s is already installed.',
+                        $manifest->name,
+                        $manifest->getVersionString()
+                    ));
+                }
+
+                if ($cmp < 0) {
+                    throw new \RuntimeException(sprintf(
+                        'Cannot install "%s" version %s — version %s is already installed. Remove it first to downgrade.',
+                        $manifest->name,
+                        $manifest->getVersionString(),
+                        $existing->getVersionString()
+                    ));
+                }
+            }
+
+            // Newer version — remove old and continue
+            $this->removeDirectory($destDir);
         }
 
         $this->copyDirectory($packDir, $destDir);
 
         return [$manifest->name];
+    }
+
+    /**
+     * Compares two version arrays.
+     * Returns -1 if $a < $b, 0 if equal, 1 if $a > $b.
+     */
+    private function compareVersions(array $a, array $b): int
+    {
+        for ($i = 0; $i < max(count($a), count($b)); $i++) {
+            $av = $a[$i] ?? 0;
+            $bv = $b[$i] ?? 0;
+            if ($av !== $bv) {
+                return $av <=> $bv;
+            }
+        }
+        return 0;
     }
 
     private function findManifest(string $dir): ?string
