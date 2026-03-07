@@ -1,0 +1,19 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Dashboard — MC Add-on Manager{% endblock %}
+
+{% block body %}
+<div class="container">
+    <h1>Welcome to MC Add-on Manager</h1>
+    <p>Manage behaviour and resource packs across your Minecraft Bedrock servers.</p>
+
+    <div class="card">
+        <h2>⚙️ Setup</h2>
+        <p>Your manager is up and running. Next steps:</p>
+        <ul>
+            <li>Mount your <code>minecraft-data</code> folders into <code>/mc-data/</code></li>
+            <li>Make sure <code>/var/run/docker.sock</code> is mounted so servers can be restarted</li>
+        </ul>
+    </div>
+</div>
+{% endblock %}

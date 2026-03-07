@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}MC Add-on Manager{% endblock %}</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 128 128%22><text y=%221.2em%22 font-size=%2296%22>🧱</text></svg>">
+    {% block stylesheets %}
+        {{ importmap('app') }}
+    {% endblock %}
+</head>
+<body>
+    <nav>
+        <div class="nav-brand">
+            <span class="nav-icon">🧱</span>
+            <span class="nav-title">MC Add-on Manager</span>
+        </div>
+    </nav>
+
+    <main>
+        {% for message in app.flashes('success') %}
+            <div class="flash flash--success">{{ message }}</div>
+        {% endfor %}
+        {% for message in app.flashes('error') %}
+            <div class="flash flash--error">{{ message }}</div>
+        {% endfor %}
+
+        {% block body %}{% endblock %}
+    </main>
+
+    <footer>
+        <p>Minecraft Bedrock Add-on Manager</p>
+    </footer>
+</body>
+</html>
