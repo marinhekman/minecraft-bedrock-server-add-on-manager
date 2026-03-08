@@ -22,8 +22,8 @@ class AddonScanner
     public function scan(ServerInstance $server): array
     {
         $packs = array_merge(
-            $this->scanDirectory($server->getBehaviourPacksPath(), AddonType::Behaviour, $server),
-            $this->scanDirectory($server->getResourcePacksPath(), AddonType::Resource, $server),
+            $this->scanDirectory($server->getBehaviourPacksPath(), [AddonType::Behaviour, AddonType::Script], $server),
+            $this->scanDirectory($server->getResourcePacksPath(), [AddonType::Resource], $server),
         );
 
         usort($packs, fn($a, $b) => strcmp($a->manifest->name, $b->manifest->name));
@@ -32,13 +32,16 @@ class AddonScanner
     }
 
     /** @return AddonPack[] */
-    private function scanDirectory(string $dir, AddonType $expectedType, ServerInstance $server): array
+    private function scanDirectory(string $dir, array $expectedTypes, ServerInstance $server): array
     {
         if (!is_dir($dir)) {
             return [];
         }
 
-        $enabledUuids = $this->worldPacksManager->getEnabledUuids($server, $expectedType);
+        $enabledUuids = [];
+        foreach ($expectedTypes as $type) {
+            $enabledUuids = array_merge($enabledUuids, $this->worldPacksManager->getEnabledUuids($server, $type));
+        }
         $packs = [];
 
         foreach (new \DirectoryIterator($dir) as $entry) {
@@ -59,7 +62,7 @@ class AddonScanner
             }
 
             // Skip if the manifest type doesn't match the folder it's in
-            if ($manifest->type !== $expectedType) {
+            if (!in_array($manifest->type, $expectedTypes, true)) {
                 continue;
             }
 

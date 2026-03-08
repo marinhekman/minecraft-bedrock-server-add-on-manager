@@ -5,6 +5,7 @@ namespace App\Model;
 enum AddonType: string
 {
     case Behaviour = 'data';
+    case Script    = 'script';
     case Resource  = 'resources';
 }
 

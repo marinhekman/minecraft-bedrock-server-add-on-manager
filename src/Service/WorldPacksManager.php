@@ -80,7 +80,8 @@ class WorldPacksManager
     private function resolveFile(ServerInstance $server, AddonType $type): string
     {
         return match ($type) {
-            AddonType::Behaviour => $server->getWorldBehaviourPacksFile(),
+            AddonType::Behaviour,
+            AddonType::Script    => $server->getWorldBehaviourPacksFile(),
             AddonType::Resource  => $server->getWorldResourcePacksFile(),
         };
     }

@@ -157,7 +157,8 @@ class AddonInstaller
     private function resolveTargetDir(ServerInstance $server, AddonManifest $manifest): string
     {
         return match ($manifest->type) {
-            AddonType::Behaviour => $server->getBehaviourPacksPath(),
+            AddonType::Behaviour,
+            AddonType::Script    => $server->getBehaviourPacksPath(),
             AddonType::Resource  => $server->getResourcePacksPath(),
         };
     }

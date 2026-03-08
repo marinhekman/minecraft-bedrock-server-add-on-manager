@@ -1,0 +1,32 @@
+GNU AFFERO GENERAL PUBLIC LICENSE
+                       Version 3, 19 November 2007
+
+Copyright (C) 2026 Marin Hekman
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+---
+
+## Attribution
+
+This project was created by **Marin Hekman**.
+
+If you use, modify, or build upon this software, you are welcome to do so
+under the terms of the AGPLv3. As a courtesy, the author kindly requests
+that you acknowledge the original work by retaining a visible credit such as:
+
+> Based on [Minecraft Bedrock Add-on Manager](https://github.com/marinhekman/minecraft-bedrock-server-add-on-manager) by Marin Hekman.
+
+This is not a legal requirement beyond what the AGPLv3 already mandates,
+but it is appreciated and helps the project grow.

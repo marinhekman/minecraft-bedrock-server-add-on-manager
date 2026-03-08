@@ -107,6 +107,8 @@
                                             <td>
                                                 {% if pack.manifest.type.value == 'data' %}
                                                     🔧 Behaviour
+                                                {% elseif pack.manifest.type.value == 'script' %}
+                                                    📜 Script
                                                 {% else %}
                                                     🎨 Resource
                                                 {% endif %}
@@ -179,7 +181,6 @@
                                         <th>Name</th>
                                         <th>Type</th>
                                         <th>Version</th>
-                                        <th>Status</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -189,18 +190,13 @@
                                             <td>
                                                 {% if pack.manifest.type.value == 'data' %}
                                                     🔧 Behaviour
+                                                {% elseif pack.manifest.type.value == 'script' %}
+                                                    📜 Script
                                                 {% else %}
                                                     🎨 Resource
                                                 {% endif %}
                                             </td>
                                             <td><code>{{ pack.manifest.versionString }}</code></td>
-                                            <td>
-                                                {% if pack.enabled %}
-                                                    <span class="badge bg-success">Enabled</span>
-                                                {% else %}
-                                                    <span class="badge bg-secondary">Disabled</span>
-                                                {% endif %}
-                                            </td>
                                         </tr>
                                     {% endfor %}
                                 </tbody>

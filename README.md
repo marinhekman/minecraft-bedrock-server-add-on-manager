@@ -6,7 +6,7 @@ A web-based dashboard for managing add-ons (behaviour packs and resource packs) 
 ![Symfony](https://img.shields.io/badge/Symfony-7.4-black)
 ![FrankenPHP](https://img.shields.io/badge/FrankenPHP-1-purple)
 ![Bootstrap](https://img.shields.io/badge/Bootstrap-5-blueviolet)
-![License](https://img.shields.io/badge/license-MIT-green)
+![License](https://img.shields.io/badge/license-AGPL--v3-blue)
 
 ## Features
 
@@ -127,4 +127,12 @@ The Docker socket is mounted to allow container discovery and restart signals. N
 
 ## License
 
-MIT
+This project is licensed under the **GNU Affero General Public License v3.0 (AGPLv3)**.
+You are free to use, modify, and distribute this software, but any modified version
+must also be released under the AGPLv3, including when run as a network service.
+
+If you build upon this project, the author kindly requests that you retain a visible credit:
+
+> Based on [Minecraft Bedrock Add-on Manager](https://github.com/marinhekman/minecraft-bedrock-server-add-on-manager) by Marin Hekman.
+
+See the [LICENSE](LICENSE) file for full details.

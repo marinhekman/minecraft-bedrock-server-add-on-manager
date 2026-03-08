@@ -38,4 +38,3 @@ class ServerInstance
         return $this->dataPath . '/worlds/Bedrock level/world_resource_packs.json';
     }
 }
-
