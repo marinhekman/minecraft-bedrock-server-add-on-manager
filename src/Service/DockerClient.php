@@ -10,9 +10,9 @@ class DockerClient
     public function listMinecraftContainers(): array
     {
         return $this->request('GET', '/containers/json', [
+            'all'     => 'true',
             'filters' => json_encode([
                 'ancestor' => ['itzg/minecraft-bedrock-server'],
-                'status'   => ['running'],
             ]),
         ]) ?? [];
     }

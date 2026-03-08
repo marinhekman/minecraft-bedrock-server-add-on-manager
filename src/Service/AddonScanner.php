@@ -14,7 +14,8 @@ class AddonScanner
     ) {}
 
     /**
-     * Returns all installed addon packs for a server, both enabled and disabled.
+     * Returns all installed addon packs for a server, both enabled and disabled,
+     * and both user-installed and system packs.
      *
      * @return AddonPack[]
      */
@@ -62,25 +63,19 @@ class AddonScanner
                 continue;
             }
 
-            // Skip Minecraft built-in system packs
-            if ($this->isSystemPack($manifest->name)) {
-                continue;
-            }
-
             $packs[] = new AddonPack(
                 manifest: $manifest,
                 path: $entry->getPathname(),
                 enabled: in_array($manifest->uuid, $enabledUuids, true),
+                isSystem: $this->isSystemPack($entry->getFilename()),
             );
         }
 
         return $packs;
     }
 
-    private function isSystemPack(string $name): bool
+    private function isSystemPack(string $folderName): bool
     {
-        return str_starts_with($name, 'resourcePack.')
-            || str_starts_with($name, 'pack.')
-            || str_starts_with($name, 'skinPack.');
+        return !str_starts_with(strtolower($folderName), 'user_');
     }
 }

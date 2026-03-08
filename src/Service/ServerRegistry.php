@@ -8,9 +8,6 @@ class ServerRegistry
 {
     private const BASE_PATH = '/mc-data';
 
-    /** @var ServerInstance[]|null */
-    private ?array $instances = null;
-
     public function __construct(
         private readonly DockerClient $dockerClient,
     ) {}
@@ -18,11 +15,7 @@ class ServerRegistry
     /** @return ServerInstance[] */
     public function getAll(): array
     {
-        if ($this->instances === null) {
-            $this->instances = $this->scan();
-        }
-
-        return $this->instances;
+        return $this->scan();
     }
 
     public function get(string $name): ?ServerInstance

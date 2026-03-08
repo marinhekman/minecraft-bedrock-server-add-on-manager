@@ -97,7 +97,7 @@ class AddonInstaller
         $manifest  = $this->manifestParser->parseFile($manifestPath);
         $targetDir = $this->resolveTargetDir($server, $manifest);
         $packDir   = dirname($manifestPath);
-        $destDir   = $targetDir . '/' . $this->sanitizeFolderName($manifest);
+        $destDir   = $targetDir . '/user_' . $this->sanitizeFolderName($manifest);
 
         if (is_dir($destDir)) {
             // Check version of existing install
@@ -133,22 +133,6 @@ class AddonInstaller
         return [$manifest->name];
     }
 
-    /**
-     * Compares two version arrays.
-     * Returns -1 if $a < $b, 0 if equal, 1 if $a > $b.
-     */
-    private function compareVersions(array $a, array $b): int
-    {
-        for ($i = 0; $i < max(count($a), count($b)); $i++) {
-            $av = $a[$i] ?? 0;
-            $bv = $b[$i] ?? 0;
-            if ($av !== $bv) {
-                return $av <=> $bv;
-            }
-        }
-        return 0;
-    }
-
     private function findManifest(string $dir): ?string
     {
         // Check root level first
@@ -182,6 +166,22 @@ class AddonInstaller
     {
         $name = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $manifest->name);
         return $name . '_' . substr($manifest->uuid, 0, 8);
+    }
+
+    /**
+     * Compares two version arrays.
+     * Returns -1 if $a < $b, 0 if equal, 1 if $a > $b.
+     */
+    private function compareVersions(array $a, array $b): int
+    {
+        for ($i = 0; $i < max(count($a), count($b)); $i++) {
+            $av = $a[$i] ?? 0;
+            $bv = $b[$i] ?? 0;
+            if ($av !== $bv) {
+                return $av <=> $bv;
+            }
+        }
+        return 0;
     }
 
     private function openZip(string $path): \ZipArchive

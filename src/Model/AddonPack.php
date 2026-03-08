@@ -8,6 +8,7 @@ class AddonPack
         public readonly AddonManifest $manifest,
         public readonly string        $path,
         public readonly bool          $enabled,
+        public readonly bool          $isSystem = false,
     ) {}
 
     public function getFolderName(): string
@@ -15,4 +16,3 @@ class AddonPack
         return basename($this->path);
     }
 }
-

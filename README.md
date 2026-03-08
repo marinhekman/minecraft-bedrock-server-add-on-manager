@@ -5,15 +5,20 @@ A web-based dashboard for managing add-ons (behaviour packs and resource packs) 
 ![PHP](https://img.shields.io/badge/PHP-8.4-blue)
 ![Symfony](https://img.shields.io/badge/Symfony-7.4-black)
 ![FrankenPHP](https://img.shields.io/badge/FrankenPHP-1-purple)
+![Bootstrap](https://img.shields.io/badge/Bootstrap-5-blueviolet)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 ## Features
 
-- 📋 Overview of all installed add-ons per server with enabled/disabled status
+- 📋 Overview of all user-installed add-ons per server with enabled/disabled status
 - ✅ Enable and disable add-ons with a single click
+- ⬆️ Install add-ons by uploading `.mcaddon` or `.mcpack` files directly from the browser
+- 🗑️ Remove add-ons with a confirmation dialog
 - 🔄 Restart your Minecraft server directly from the dashboard
-- 🐳 Automatic detection of running `itzg/minecraft-bedrock-server` containers via Docker API
-- ⬆️ Install add-ons from `.mcaddon` or `.mcpack` files *(coming soon)*
+- 🐳 Automatic detection of running `itzg/minecraft-bedrock-server` containers via Docker API — no manual container name configuration needed
+- ⚠️ Dependency validation — warns when a pack has unmet UUID dependencies, with a clickable popover showing the missing UUIDs
+- ⚙️ Built-in system packs (vanilla, chemistry, experimental) are shown separately in a collapsed section, keeping the main view clean
+- 🔒 Version protection — prevents accidental downgrades when reinstalling a pack
 
 ## Prerequisites
 
@@ -36,7 +41,6 @@ A web-based dashboard for managing add-ons (behaviour packs and resource packs) 
 git clone https://github.com/marinhekman/minecraft-bedrock-server-add-on-manager.git
 cd minecraft-bedrock-server-add-on-manager
 
-# Build the image
 docker build -t minecraft-bedrock-server-add-on-manager .
 ```
 
@@ -87,15 +91,6 @@ The name after `/mc-data/` (e.g. `server1`, `server2`) is used as the display la
 
 If no `-v` mounts are provided for `/mc-data/`, the dashboard will show a message indicating no servers are configured.
 
-## Updating
-
-```bash
-git pull
-docker build --no-cache -t minecraft-bedrock-server-add-on-manager .
-docker stop mc-server-manager && docker rm mc-server-manager
-# Re-run the docker run command from step 3
-```
-
 ## How it works
 
 The manager mounts each Minecraft server's `minecraft-data` folder and reads/writes:
@@ -105,9 +100,20 @@ The manager mounts each Minecraft server's `minecraft-data` folder and reads/wri
 - `worlds/Bedrock level/world_behavior_packs.json` — enables/disables behaviour packs
 - `worlds/Bedrock level/world_resource_packs.json` — enables/disables resource packs
 
-It also connects to the Docker socket to automatically match each mounted data folder to its running container, retrieve port and status information, and send restart signals.
+It connects to the Docker socket to automatically match each mounted data folder to its running container, retrieve port and status information, and send restart signals.
+
+User-installed packs are stored in folders prefixed with `user_` (e.g. `behavior_packs/user_MyPack_abc12345/`) so they can be reliably distinguished from built-in server packs.
 
 > **Note:** After enabling or disabling add-ons, the Minecraft server must be restarted for changes to take effect. Use the **Restart server** button on the dashboard.
+
+## Updating
+
+```bash
+git pull
+docker build --no-cache -t minecraft-bedrock-server-add-on-manager .
+docker stop mc-server-manager && docker rm mc-server-manager
+# Re-run the docker run command from step 3
+```
 
 ## Security
 

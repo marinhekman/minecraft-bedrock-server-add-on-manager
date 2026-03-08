@@ -80,9 +80,30 @@
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {% for pack in data.packs %}
-                                        <tr>
-                                            <td>{{ pack.manifest.name }}</td>
+                                    {% for item in data.packs %}
+                                        {% set pack = item.pack %}
+                                        <tr class="{{ not item.depsSatisfied ? 'table-warning' : '' }}">
+                                            <td>
+                                                {{ pack.manifest.name }}
+                                                {% if not item.depsSatisfied %}
+                                                    {% set depContent %}
+                                                        <div style="min-width:420px;max-width:420px">
+                                                            <strong>Missing dependencies:</strong>
+                                                            {% for dep in item.unmetDeps %}
+                                                                <div class="mt-1 d-flex align-items-center gap-2">
+                                                                    <code style="user-select:all;font-size:0.85em;white-space:nowrap">{{ dep.uuid }}</code>
+                                                                </div>
+                                                            {% endfor %}
+                                                        </div>
+                                                    {% endset %}
+                                                    <span class="badge bg-warning text-dark ms-1"
+                                                        style="cursor:pointer"
+                                                        data-bs-toggle="popover"
+                                                        data-bs-content="{{ depContent|e('html_attr') }}">
+                                                        ⚠️ Missing deps
+                                                    </span>
+                                                {% endif %}
+                                            </td>
                                             <td>
                                                 {% if pack.manifest.type.value == 'data' %}
                                                     🔧 Behaviour
@@ -144,6 +165,50 @@
                         </div>
                     {% endif %}
                 </div>
+
+                {% if data.systemPacks is not empty %}
+                <div class="card-footer p-0">
+                    <details>
+                        <summary class="px-3 py-2 text-muted" style="cursor:pointer;list-style:none">
+                            ⚙️ <small>{{ data.systemPacks|length }} built-in system pack{{ data.systemPacks|length > 1 ? 's' : '' }} (click to expand)</small>
+                        </summary>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-striped mb-0 text-muted">
+                                <thead class="table-secondary">
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Type</th>
+                                        <th>Version</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for pack in data.systemPacks %}
+                                        <tr>
+                                            <td>{{ pack.manifest.name }}</td>
+                                            <td>
+                                                {% if pack.manifest.type.value == 'data' %}
+                                                    🔧 Behaviour
+                                                {% else %}
+                                                    🎨 Resource
+                                                {% endif %}
+                                            </td>
+                                            <td><code>{{ pack.manifest.versionString }}</code></td>
+                                            <td>
+                                                {% if pack.enabled %}
+                                                    <span class="badge bg-success">Enabled</span>
+                                                {% else %}
+                                                    <span class="badge bg-secondary">Disabled</span>
+                                                {% endif %}
+                                            </td>
+                                        </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </details>
+                </div>
+                {% endif %}
             </div>
         {% endfor %}
     {% endif %}

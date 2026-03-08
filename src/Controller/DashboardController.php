@@ -3,6 +3,7 @@
 namespace App\Controller;
 
 use App\Service\AddonScanner;
+use App\Service\DependencyChecker;
 use App\Service\ServerRegistry;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Response;
@@ -11,8 +12,9 @@ use Symfony\Component\Routing\Attribute\Route;
 class DashboardController extends AbstractController
 {
     public function __construct(
-        private readonly ServerRegistry $serverRegistry,
-        private readonly AddonScanner   $addonScanner,
+        private readonly ServerRegistry    $serverRegistry,
+        private readonly AddonScanner      $addonScanner,
+        private readonly DependencyChecker $dependencyChecker,
     ) {}
 
     #[Route('/', name: 'dashboard')]
@@ -22,13 +24,24 @@ class DashboardController extends AbstractController
 
         $serverData = [];
         foreach ($servers as $server) {
-            $packs = $this->addonScanner->scan($server);
+            $packs       = $this->addonScanner->scan($server);
+            $userPacks   = array_filter($packs, fn($p) => !$p->isSystem);
+            $systemPacks = array_filter($packs, fn($p) => $p->isSystem);
+
+            $packsWithDeps = array_map(function ($pack) use ($packs) {
+                return [
+                    'pack'          => $pack,
+                    'unmetDeps'     => $this->dependencyChecker->getUnmetDependencies($pack, $packs),
+                    'depsSatisfied' => $this->dependencyChecker->isSatisfied($pack, $packs),
+                ];
+            }, $userPacks);
 
             $serverData[] = [
-                'server' => $server,
-                'packs'  => $packs,
-                'enabledCount'  => count(array_filter($packs, fn($p) => $p->enabled)),
-                'disabledCount' => count(array_filter($packs, fn($p) => !$p->enabled)),
+                'server'        => $server,
+                'packs'         => array_values($packsWithDeps),
+                'systemPacks'   => array_values($systemPacks),
+                'enabledCount'  => count(array_filter($userPacks, fn($p) => $p->enabled)),
+                'disabledCount' => count(array_filter($userPacks, fn($p) => !$p->enabled)),
             ];
         }
 
@@ -37,4 +50,3 @@ class DashboardController extends AbstractController
         ]);
     }
 }
-

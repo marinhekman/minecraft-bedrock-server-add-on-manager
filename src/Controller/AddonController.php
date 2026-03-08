@@ -4,6 +4,7 @@ namespace App\Controller;
 
 use App\Service\AddonInstaller;
 use App\Service\AddonScanner;
+use App\Service\DependencyChecker;
 use App\Service\ServerRegistry;
 use App\Service\WorldPacksManager;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -19,6 +20,7 @@ class AddonController extends AbstractController
         private readonly AddonScanner      $addonScanner,
         private readonly WorldPacksManager $worldPacksManager,
         private readonly AddonInstaller    $addonInstaller,
+        private readonly DependencyChecker $dependencyChecker,
     ) {}
 
     #[Route('/install', name: 'addon_install', methods: ['POST'])]
@@ -45,6 +47,14 @@ class AddonController extends AbstractController
 
             foreach ($installed as $name) {
                 $this->addFlash('success', sprintf('"%s" has been installed.', $name));
+            }
+
+            // Check dependencies of newly installed packs and warn if any are unmet
+            $allPacks = $this->addonScanner->scan($server);
+            $newPacks = array_filter($allPacks, fn($p) => in_array($p->manifest->name, $installed, true));
+            $warnings = $this->dependencyChecker->getInstallWarnings(array_values($newPacks), $allPacks);
+            foreach ($warnings as $warning) {
+                $this->addFlash('warning', $warning);
             }
         } catch (\RuntimeException $e) {
             $this->addFlash('error', $e->getMessage());
