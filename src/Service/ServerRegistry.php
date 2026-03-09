@@ -36,7 +36,6 @@ class ServerRegistry
             return [];
         }
 
-        // Build a map of host path → container info from Docker API
         $containersByHostPath = $this->buildContainerMap();
 
         $instances = [];
@@ -46,7 +45,7 @@ class ServerRegistry
                 continue;
             }
 
-            $containerPath = $entry->getPathname(); // e.g. /mc-data/server1
+            $containerPath = $entry->getPathname();
             $hostPath      = $this->dockerClient->resolveHostPath($containerPath);
             $container     = $hostPath ? ($containersByHostPath[$hostPath] ?? null) : null;
 
@@ -59,6 +58,7 @@ class ServerRegistry
                                      : null,
                 containerStatus: $container['State'] ?? null,
                 port:            $this->resolvePort($container),
+                startedAt:       $this->resolveStartedAt($container),
             );
         }
 
@@ -67,10 +67,6 @@ class ServerRegistry
         return $instances;
     }
 
-    /**
-     * Returns a map of host data path => container info
-     * for all running itzg/minecraft-bedrock-server containers.
-     */
     private function buildContainerMap(): array
     {
         $map = [];
@@ -87,6 +83,22 @@ class ServerRegistry
         }
 
         return $map;
+    }
+
+    private function resolveStartedAt(?array $container): ?int
+    {
+        if ($container === null) {
+            return null;
+        }
+
+        $inspect   = $this->dockerClient->inspectContainer($container['Id']);
+        $startedAt = $inspect['State']['StartedAt'] ?? null;
+
+        if ($startedAt === null) {
+            return null;
+        }
+
+        return (new \DateTimeImmutable($startedAt))->getTimestamp();
     }
 
     private function resolvePort(?array $container): ?int

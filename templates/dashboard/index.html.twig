@@ -11,7 +11,9 @@
     {% else %}
         {% for data in serverData %}
             {% set server = data.server %}
-            <div class="card shadow-sm mb-4">
+            <div class="card shadow-sm mb-4"
+                data-server="{{ server.name }}"
+                data-status-url="{{ path('server_status', {serverName: server.name}) }}">
                 <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
                     <div class="d-flex align-items-center gap-2">
                         <h2 class="h5 mb-0">🖥️ {{ server.name }}</h2>
@@ -82,7 +84,8 @@
                                 <tbody>
                                     {% for item in data.packs %}
                                         {% set pack = item.pack %}
-                                        <tr class="{{ not item.depsSatisfied ? 'table-warning' : '' }}">
+                                        <tr class="{{ not item.depsSatisfied ? 'table-warning' : '' }}"
+                                            data-uuid="{{ pack.manifest.uuid }}">
                                             <td>
                                                 {{ pack.manifest.name }}
                                                 {% if not item.depsSatisfied %}
@@ -115,10 +118,12 @@
                                             </td>
                                             <td><code>{{ pack.manifest.versionString }}</code></td>
                                             <td>
-                                                {% if pack.enabled %}
-                                                    <span class="badge bg-success">Enabled</span>
+                                                {% if item.status == 'loaded' %}
+                                                    <span class="badge bg-info status-badge">✅ Loaded</span>
+                                                {% elseif item.status == 'enabled' %}
+                                                    <span class="badge bg-success status-badge">Enabled</span>
                                                 {% else %}
-                                                    <span class="badge bg-secondary">Disabled</span>
+                                                    <span class="badge bg-secondary status-badge">Disabled</span>
                                                 {% endif %}
                                             </td>
                                             <td>

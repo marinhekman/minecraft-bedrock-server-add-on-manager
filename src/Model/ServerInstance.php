@@ -11,6 +11,7 @@ class ServerInstance
         public readonly ?string $containerName   = null,
         public readonly ?string $containerStatus = null,
         public readonly ?int    $port            = null,
+        public readonly ?int    $startedAt       = null,
     ) {}
 
     public function isRunning(): bool

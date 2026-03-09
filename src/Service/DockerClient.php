@@ -4,8 +4,8 @@ namespace App\Service;
 
 class DockerClient
 {
-    private const SOCKET    = '/var/run/docker.sock';
-    private const BASE_URL  = 'http://localhost/v1.41';
+    private const SOCKET   = '/var/run/docker.sock';
+    private const BASE_URL = 'http://docker/v1.41';
 
     public function listMinecraftContainers(): array
     {
@@ -27,11 +27,37 @@ class DockerClient
         $this->request('POST', sprintf('/containers/%s/restart', $id));
     }
 
-    /**
-     * Inspect our own container to resolve the host-side path of a mount.
-     * Given a container-side path (e.g. /mc-data/server1), returns the
-     * corresponding host path (e.g. /home/user/minecraft-data).
-     */
+    public function getLogsBetween(string $containerId, int $since, int $until): string
+    {
+        $url = self::BASE_URL . sprintf('/containers/%s/logs', $containerId)
+            . '?' . http_build_query([
+                'stdout' => '1',
+                'stderr' => '0',
+                'since'  => $since,
+                'until'  => $until,
+            ]);
+
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_UNIX_SOCKET_PATH, self::SOCKET);
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+
+        $raw      = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $error    = curl_errno($ch) ? curl_error($ch) : null;
+        curl_close($ch);
+
+        if ($error) {
+            throw new \RuntimeException('Docker socket error: ' . $error);
+        }
+
+        if ($httpCode >= 400) {
+            throw new \RuntimeException(sprintf('Docker API error %d fetching logs', $httpCode));
+        }
+
+        return $raw ?: '';
+    }
+
     public function resolveHostPath(string $containerPath): ?string
     {
         $selfId = $this->getSelfContainerId();
@@ -51,13 +77,11 @@ class DockerClient
 
     private function getSelfContainerId(): ?string
     {
-        // Docker sets the container's short ID as the hostname
         $hostname = gethostname();
         if (!$hostname) {
             return null;
         }
 
-        // Find our own container by hostname (which matches container ID prefix)
         $containers = $this->request('GET', '/containers/json', [
             'filters' => json_encode(['id' => [$hostname]]),
         ]) ?? [];

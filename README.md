@@ -15,14 +15,11 @@ A web-based dashboard for managing add-ons (behaviour packs and resource packs) 
 - ⬆️ Install add-ons by uploading `.mcaddon` or `.mcpack` files directly from the browser
 - 🗑️ Remove add-ons with a confirmation dialog
 - 🔄 Restart your Minecraft server directly from the dashboard
+- 🟦 Live **Loaded** status per add-on — shows whether each pack was actually loaded by the server on its last boot, updated automatically every 10 seconds via the Docker logs API
 - 🐳 Automatic detection of running `itzg/minecraft-bedrock-server` containers via Docker API — no manual container name configuration needed
 - ⚠️ Dependency validation — warns when a pack has unmet UUID dependencies, with a clickable popover showing the missing UUIDs
 - ⚙️ Built-in system packs (vanilla, chemistry, experimental) are shown separately in a collapsed section, keeping the main view clean
 - 🔒 Version protection — prevents accidental downgrades when reinstalling a pack
-
-## Screenshot
-
-![Minecraft Bedrock Add-on Manager dashboard](screenshot.png "Minecraft Bedrock Add-on Manager dashboard")
 
 ## Prerequisites
 
@@ -104,7 +101,7 @@ The manager mounts each Minecraft server's `minecraft-data` folder and reads/wri
 - `worlds/Bedrock level/world_behavior_packs.json` — enables/disables behaviour packs
 - `worlds/Bedrock level/world_resource_packs.json` — enables/disables resource packs
 
-It connects to the Docker socket to automatically match each mounted data folder to its running container, retrieve port and status information, and send restart signals.
+It connects to the Docker socket to automatically match each mounted data folder to its running container, retrieve port and status information, send restart signals, and read container logs to determine which packs were actually loaded on the last server boot.
 
 User-installed packs are stored in folders prefixed with `user_` (e.g. `behavior_packs/user_MyPack_abc12345/`) so they can be reliably distinguished from built-in server packs.
 
