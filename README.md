@@ -21,6 +21,11 @@ A web-based dashboard for managing add-ons (behaviour packs and resource packs) 
 - ⚙️ Built-in system packs (vanilla, chemistry, experimental) are shown separately in a collapsed section, keeping the main view clean
 - 🔒 Version protection — prevents accidental downgrades when reinstalling a pack
 
+
+## Screenshot
+
+![Minecraft Bedrock Add-on Manager dashboard](screenshot.png "Minecraft Bedrock Add-on Manager dashboard")
+
 ## Prerequisites
 
 - **Docker** installed on your host
