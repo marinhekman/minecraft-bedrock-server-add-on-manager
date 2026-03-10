@@ -8,6 +8,10 @@ A web-based dashboard for managing add-ons (behaviour packs and resource packs) 
 ![Bootstrap](https://img.shields.io/badge/Bootstrap-5-blueviolet)
 ![License](https://img.shields.io/badge/license-AGPL--v3-blue)
 
+## Motivation
+
+While the [Bedrock Server Manager](https://bedrock-server-manager.readthedocs.io/en/stable/) is a superior tool for managing Minecraft Bedrock server add-ons, it currently supports only x64-based processors. If you want to run a server on an ARM device, such as a Raspberry Pi, you may find yourself frustrated by having to manage add-on files manually. This project was created to fill that gap: the Add-On Manager is designed specifically to make add-on management on ARM-based systems easier and more convenient.
+
 ## Features
 
 - 📋 Overview of all user-installed add-ons per server with enabled/disabled status
