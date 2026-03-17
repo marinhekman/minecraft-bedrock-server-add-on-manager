@@ -53,13 +53,16 @@ class ManifestParser
 
         $name    = $this->cleanName($header['name'] ?? 'Unknown');
         $version = $header['version'] ?? [0, 0, 0];
-        $type    = $this->resolveType($data['modules'] ?? [], $context);
+        $modules = $data['modules'] ?? [];
+        $type    = $this->resolveType($modules, $context);
+        $hasScriptModule = $this->hasScriptModule($modules);
 
         return new AddonManifest(
             uuid: $uuid,
             name: $name,
             version: $version,
             type: $type,
+            hasScriptModule: $hasScriptModule,
             dependencies: $data['dependencies'] ?? [],
         );
     }
@@ -70,8 +73,24 @@ class ManifestParser
         return trim(preg_replace('/§./', '', $name));
     }
 
+    private function hasScriptModule(array $modules): bool
+    {
+        foreach ($modules as $module) {
+            if (($module['type'] ?? '') === 'script') {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private function resolveType(array $modules, string $context): AddonType
     {
+        // Prefer 'data' over 'script' — a pack with both is a behaviour pack
+        foreach ($modules as $module) {
+            if (($module['type'] ?? '') === 'data') {
+                return AddonType::Behaviour;
+            }
+        }
         foreach ($modules as $module) {
             $addonType = AddonType::tryFrom($module['type'] ?? '');
             if ($addonType !== null) {

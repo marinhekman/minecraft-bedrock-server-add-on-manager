@@ -108,19 +108,19 @@
                                                 {% endif %}
                                             </td>
                                             <td>
-                                                {% if pack.manifest.type.value == 'data' %}
-                                                    🔧 Behaviour
-                                                {% elseif pack.manifest.type.value == 'script' %}
-                                                    📜 Script
+                                                {% if pack.manifest.type.value == 'resources' %}
+                                                    Resource 🎨
+                                                {% elseif pack.manifest.type.value == 'data' and pack.manifest.hasScriptModule %}
+                                                    Behaviour 🔧 📜
+                                                {% elseif pack.manifest.type.value == 'data' %}
+                                                    Behaviour 🔧
                                                 {% else %}
-                                                    🎨 Resource
+                                                    Behaviour 📜
                                                 {% endif %}
                                             </td>
                                             <td><code>{{ pack.manifest.versionString }}</code></td>
                                             <td>
-                                                {% if item.status == 'loaded' %}
-                                                    <span class="badge bg-info status-badge">✅ Loaded</span>
-                                                {% elseif item.status == 'enabled' %}
+                                                {% if pack.enabled %}
                                                     <span class="badge bg-success status-badge">Enabled</span>
                                                 {% else %}
                                                     <span class="badge bg-secondary status-badge">Disabled</span>
@@ -193,12 +193,14 @@
                                         <tr>
                                             <td>{{ pack.manifest.name }}</td>
                                             <td>
-                                                {% if pack.manifest.type.value == 'data' %}
-                                                    🔧 Behaviour
-                                                {% elseif pack.manifest.type.value == 'script' %}
-                                                    📜 Script
+                                                {% if pack.manifest.type.value == 'resources' %}
+                                                    Resource 🎨
+                                                {% elseif pack.manifest.type.value == 'data' and pack.manifest.hasScriptModule %}
+                                                    Behaviour 🔧 📜
+                                                {% elseif pack.manifest.type.value == 'data' %}
+                                                    Behaviour 🔧
                                                 {% else %}
-                                                    🎨 Resource
+                                                    Behaviour 📜
                                                 {% endif %}
                                             </td>
                                             <td><code>{{ pack.manifest.versionString }}</code></td>

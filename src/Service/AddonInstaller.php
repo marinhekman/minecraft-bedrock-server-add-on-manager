@@ -43,6 +43,7 @@ class AddonInstaller
     {
         $zip = $this->openZip($path);
         $installed = [];
+        $errors = [];
 
         $tmpDir = sys_get_temp_dir() . '/mcaddon_' . uniqid();
         mkdir($tmpDir, 0775, true);
@@ -51,17 +52,47 @@ class AddonInstaller
             $zip->extractTo($tmpDir);
             $zip->close();
 
-            // An .mcaddon can contain .mcpack files or pack folders directly
+            // Case 1: .mcaddon contains .mcpack files
             foreach (glob($tmpDir . '/*.mcpack') as $mcpack) {
-                $installed = array_merge($installed, $this->installMcPack($server, $mcpack));
+                try {
+                    $installed = array_merge($installed, $this->installMcPack($server, $mcpack));
+                } catch (\RuntimeException $e) {
+                    $errors[] = $e->getMessage();
+                }
             }
 
-            // Also handle .mcaddon that directly contain pack folders (with manifest.json)
-            if (empty($installed)) {
+            // Case 2: .mcaddon contains pack folders directly (each with their own manifest.json)
+            if (empty($installed) && empty($errors)) {
+                foreach (new \DirectoryIterator($tmpDir) as $entry) {
+                    if (!$entry->isDir() || $entry->isDot()) {
+                        continue;
+                    }
+                    if (file_exists($entry->getPathname() . '/manifest.json')) {
+                        try {
+                            $installed = array_merge($installed, $this->installPackFolder($server, $entry->getPathname()));
+                        } catch (\RuntimeException $e) {
+                            $errors[] = $e->getMessage();
+                        }
+                    }
+                }
+            }
+
+            // Case 3: .mcaddon is itself a single pack folder (manifest.json at root)
+            if (empty($installed) && empty($errors)) {
                 $installed = $this->installPackFolder($server, $tmpDir);
             }
         } finally {
             $this->removeDirectory($tmpDir);
+        }
+
+        // Re-throw combined errors only if nothing was installed at all
+        if (!empty($errors) && empty($installed)) {
+            throw new \RuntimeException(implode(' / ', $errors));
+        }
+
+        // If some packs installed and some failed, surface warnings via installed list
+        foreach ($errors as $error) {
+            $installed[] = '⚠️ ' . $error;
         }
 
         return $installed;

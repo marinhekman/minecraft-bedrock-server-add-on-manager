@@ -16,7 +16,8 @@ class AddonManifest
         public readonly string    $name,
         public readonly array     $version,
         public readonly AddonType $type,
-        public readonly array     $dependencies = [],
+        public readonly bool      $hasScriptModule = false,
+        public readonly array     $dependencies    = [],
     ) {}
 
     public function getVersionString(): string
