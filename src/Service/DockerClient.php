@@ -27,6 +27,25 @@ class DockerClient
         $this->request('POST', sprintf('/containers/%s/restart', $id));
     }
 
+    public function sendCommand(string $containerId, string $command): void
+    {
+        // Create exec instance
+        $exec = $this->request('POST', sprintf('/containers/%s/exec', $containerId), [], [
+            'AttachStdout' => true,
+            'AttachStderr' => true,
+            'Cmd'          => ['send-command', $command],
+        ]);
+
+        if (!isset($exec['Id'])) {
+            throw new \RuntimeException('Failed to create exec instance.');
+        }
+
+        // Start exec instance (detached)
+        $this->request('POST', sprintf('/exec/%s/start', $exec['Id']), [], [
+            'Detach' => true,
+        ]);
+    }
+
     public function getLogsBetween(string $containerId, int $since, int $until): string
     {
         $url = self::BASE_URL . sprintf('/containers/%s/logs', $containerId)
@@ -89,7 +108,7 @@ class DockerClient
         return $containers[0]['Id'] ?? null;
     }
 
-    private function request(string $method, string $path, array $query = []): ?array
+    private function request(string $method, string $path, array $query = [], array $body = []): ?array
     {
         $url = self::BASE_URL . $path;
         if (!empty($query)) {
@@ -102,11 +121,15 @@ class DockerClient
         curl_setopt($ch, CURLOPT_CUSTOMREQUEST, strtoupper($method));
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 
-        if ($method === 'POST') {
+        if (!empty($body)) {
+            $json = json_encode($body);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, $json);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+        } elseif ($method === 'POST') {
             curl_setopt($ch, CURLOPT_POSTFIELDS, '');
         }
 
-        $body     = curl_exec($ch);
+        $raw      = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $error    = curl_errno($ch) ? curl_error($ch) : null;
         curl_close($ch);
@@ -117,10 +140,10 @@ class DockerClient
 
         if ($httpCode >= 400) {
             throw new \RuntimeException(sprintf(
-                'Docker API error %d on %s %s: %s', $httpCode, $method, $path, $body
+                'Docker API error %d on %s %s: %s', $httpCode, $method, $path, $raw
             ));
         }
 
-        return $body ? json_decode($body, true) : null;
+        return $raw ? json_decode($raw, true) : null;
     }
 }

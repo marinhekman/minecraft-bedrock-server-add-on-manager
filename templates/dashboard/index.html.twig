@@ -14,6 +14,7 @@
             <div class="card shadow-sm mb-4"
                 data-server="{{ server.name }}"
                 data-status-url="{{ path('server_status', {serverName: server.name}) }}">
+
                 <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
                     <div class="d-flex align-items-center gap-2">
                         <h2 class="h5 mb-0">🖥️ {{ server.name }}</h2>
@@ -212,6 +213,29 @@
                     </details>
                 </div>
                 {% endif %}
+
+                {% if server.containerId %}
+                <div class="card-footer">
+                    <form method="post"
+                          action="{{ path('server_command', {serverName: server.name}) }}"
+                          class="d-flex gap-2"
+                          data-command-form="{{ server.name }}">
+                        <div class="input-group">
+                            <input type="text"
+                                   class="form-control form-control-sm font-monospace"
+                                   name="command"
+                                   id="commandInput{{ server.name }}"
+                                   placeholder="e.g. gamerule keepInventory true"
+                                   autocomplete="off"
+                                   list="commandHistory{{ server.name }}">
+                            <datalist id="commandHistory{{ server.name }}"></datalist>
+                            <button type="submit" class="btn btn-sm btn-outline-secondary">▶ Send</button>
+                            <button type="button" class="btn btn-sm btn-outline-danger" data-clear-history="{{ server.name }}" title="Clear history">🗑</button>
+                        </div>
+                    </form>
+                </div>
+                {% endif %}
+
             </div>
         {% endfor %}
     {% endif %}

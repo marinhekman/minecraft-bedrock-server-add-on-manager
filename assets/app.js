@@ -28,7 +28,64 @@ function initPopovers() {
 document.addEventListener('DOMContentLoaded', initPopovers);
 document.addEventListener('turbo:load', initPopovers);
 
-// ── Status polling ────────────────────────────────────────────────────────────
+// ── Command history (cookie-based) ───────────────────────────────────────────
+
+function getHistory(serverName) {
+    const key = `cmd_history_${serverName}`;
+    try {
+        return JSON.parse(decodeURIComponent(
+            document.cookie.split('; ').find(r => r.startsWith(key + '='))?.split('=')[1] || '[]'
+        ));
+    } catch { return []; }
+}
+
+function saveHistory(serverName, history) {
+    const key = `cmd_history_${serverName}`;
+    const val = encodeURIComponent(JSON.stringify(history.slice(0, 50)));
+    document.cookie = `${key}=${val}; path=/; max-age=${60 * 60 * 24 * 90}`;
+}
+
+function renderHistory(serverName) {
+    const datalist = document.getElementById(`commandHistory${serverName}`);
+    if (!datalist) return;
+    datalist.innerHTML = '';
+    getHistory(serverName).forEach(cmd => {
+        const opt = document.createElement('option');
+        opt.value = cmd;
+        datalist.appendChild(opt);
+    });
+}
+
+function initCommandForms() {
+    // Render history for all server command inputs
+    document.querySelectorAll('[data-command-form]').forEach(form => {
+        const serverName = form.dataset.commandForm;
+        renderHistory(serverName);
+
+        form.addEventListener('submit', () => {
+            const input = form.querySelector('input[name="command"]');
+            const cmd = input.value.trim();
+            if (!cmd) return;
+            const history = getHistory(serverName).filter(c => c !== cmd);
+            history.unshift(cmd);
+            saveHistory(serverName, history);
+        });
+    });
+
+    // Clear history buttons
+    document.querySelectorAll('[data-clear-history]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const serverName = btn.dataset.clearHistory;
+            saveHistory(serverName, []);
+            renderHistory(serverName);
+            const input = document.getElementById(`commandInput${serverName}`);
+            if (input) input.value = '';
+        });
+    });
+}
+
+document.addEventListener('DOMContentLoaded', initCommandForms);
+document.addEventListener('turbo:load', initCommandForms);
 
 function updateStatusBadges(card, loadedUuids) {
     card.querySelectorAll('tr[data-uuid]').forEach(row => {
