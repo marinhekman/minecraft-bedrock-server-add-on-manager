@@ -49,10 +49,17 @@ class AddonController extends AbstractController
                 $this->addFlash('success', sprintf('"%s" has been installed.', $name));
             }
 
-            // Check dependencies of newly installed packs and warn if any are unmet
-            $allPacks = $this->addonScanner->scan($server);
-            $newPacks = array_filter($allPacks, fn($p) => in_array($p->manifest->name, $installed, true));
-            $warnings = $this->dependencyChecker->getInstallWarnings(array_values($newPacks), $allPacks);
+            // Check dependencies — rescan to get fresh UUIDs of all installed packs
+            $allPacks     = $this->addonScanner->scan($server);
+            $newPacks     = array_filter($allPacks, fn($p) => in_array($p->manifest->name, $installed, true));
+            $newPackUuids = array_map(fn($p) => $p->manifest->uuid, array_values($newPacks));
+
+            // Only warn about dependencies not satisfied by existing OR newly installed packs
+            $warnings = $this->dependencyChecker->getInstallWarnings(
+                array_values($newPacks),
+                $allPacks,
+                $newPackUuids,
+            );
             foreach ($warnings as $warning) {
                 $this->addFlash('warning', $warning);
             }
