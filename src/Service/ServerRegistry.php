@@ -49,6 +49,10 @@ class ServerRegistry
             $hostPath      = $this->dockerClient->resolveHostPath($containerPath);
             $container     = $hostPath ? ($containersByHostPath[$hostPath] ?? null) : null;
 
+            if (!$this->isMinecraftDataFolder($containerPath)) {
+                continue;
+            }
+
             $instances[] = new ServerInstance(
                 name:            $entry->getFilename(),
                 dataPath:        $containerPath,
@@ -65,6 +69,12 @@ class ServerRegistry
         usort($instances, fn($a, $b) => strcmp($a->name, $b->name));
 
         return $instances;
+    }
+
+    private function isMinecraftDataFolder(string $path): bool
+    {
+        return is_dir($path . '/worlds')
+            || file_exists($path . '/server.properties');
     }
 
     private function buildContainerMap(): array
