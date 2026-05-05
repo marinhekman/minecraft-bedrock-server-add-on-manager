@@ -28,28 +28,28 @@ function initPopovers() {
 document.addEventListener('DOMContentLoaded', initPopovers);
 document.addEventListener('turbo:load', initPopovers);
 
-// ── Command history (cookie-based) ───────────────────────────────────────────
+// ── Command list (from server-side text file) ─────────────────────────────────
 
-function getHistory(serverName) {
-    const key = `cmd_history_${serverName}`;
-    try {
-        return JSON.parse(decodeURIComponent(
-            document.cookie.split('; ').find(r => r.startsWith(key + '='))?.split('=')[1] || '[]'
-        ));
-    } catch { return []; }
+let cachedCommands = [];
+
+function loadCommands() {
+    fetch('/commands')
+        .then(r => r.json())
+        .then(commands => {
+            cachedCommands = commands;
+            document.querySelectorAll('[data-command-form]').forEach(form => {
+                const serverName = form.dataset.commandForm;
+                renderCommandList(serverName);
+            });
+        })
+        .catch(() => {});
 }
 
-function saveHistory(serverName, history) {
-    const key = `cmd_history_${serverName}`;
-    const val = encodeURIComponent(JSON.stringify(history.slice(0, 50)));
-    document.cookie = `${key}=${val}; path=/; max-age=${60 * 60 * 24 * 90}`;
-}
-
-function renderHistory(serverName) {
+function renderCommandList(serverName) {
     const datalist = document.getElementById(`commandHistory${serverName}`);
     if (!datalist) return;
     datalist.innerHTML = '';
-    getHistory(serverName).forEach(cmd => {
+    cachedCommands.forEach(cmd => {
         const opt = document.createElement('option');
         opt.value = cmd;
         datalist.appendChild(opt);
@@ -57,35 +57,18 @@ function renderHistory(serverName) {
 }
 
 function initCommandForms() {
-    // Render history for all server command inputs
     document.querySelectorAll('[data-command-form]').forEach(form => {
         const serverName = form.dataset.commandForm;
-        renderHistory(serverName);
+        renderCommandList(serverName);
 
-        form.addEventListener('submit', () => {
-            const input = form.querySelector('input[name="command"]');
-            const cmd = input.value.trim();
-            if (!cmd) return;
-            const history = getHistory(serverName).filter(c => c !== cmd);
-            history.unshift(cmd);
-            saveHistory(serverName, history);
-        });
-    });
-
-    // Clear history buttons
-    document.querySelectorAll('[data-clear-history]').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const serverName = btn.dataset.clearHistory;
-            saveHistory(serverName, []);
-            renderHistory(serverName);
-            const input = document.getElementById(`commandInput${serverName}`);
-            if (input) input.value = '';
-        });
+        // Remove clear history button behaviour — no longer needed
+        const clearBtn = form.querySelector('[data-clear-history]');
+        if (clearBtn) clearBtn.remove();
     });
 }
 
-document.addEventListener('DOMContentLoaded', initCommandForms);
-document.addEventListener('turbo:load', initCommandForms);
+document.addEventListener('DOMContentLoaded', () => { loadCommands(); initCommandForms(); });
+document.addEventListener('turbo:load', () => { loadCommands(); initCommandForms(); });
 
 function updateStatusBadges(card, loadedUuids) {
     card.querySelectorAll('tr[data-uuid]').forEach(row => {
@@ -133,6 +116,23 @@ function pollStatus(card) {
         .then(data => {
             const loadedUuids = data.loadedUuids || [];
             const startedAt   = String(data.startedAt);
+
+            // Update stats badges
+            const uptimeBadge = card.querySelector('.stat-uptime');
+            const cpuBadge    = card.querySelector('.stat-cpu');
+            const memBadge    = card.querySelector('.stat-mem');
+            if (uptimeBadge) {
+                uptimeBadge.textContent = `UP ${formatUptime(data.startedAt)}`;
+            }
+            if (cpuBadge && memBadge) {
+                if (data.stats) {
+                    cpuBadge.textContent = `CPU ${data.stats.cpu}%`;
+                    memBadge.textContent = `MEM ${data.stats.memUsageMb}MB / ${data.stats.memLimitMb}MB (${data.stats.memPercent}%)`;
+                } else {
+                    cpuBadge.textContent = 'CPU –';
+                    memBadge.textContent = 'MEM –';
+                }
+            }
 
             // Detect restart — startedAt changed since last poll
             if (card.dataset.lastStartedAt && card.dataset.lastStartedAt !== startedAt) {
