@@ -218,5 +218,17 @@ function initPolling() {
     }, 10000);
 }
 
-document.addEventListener('DOMContentLoaded', initPolling);
-document.addEventListener('turbo:load', initPolling);
+function startUptimeTicker() {
+    setInterval(() => {
+        document.querySelectorAll('.card[data-status-url]').forEach(card => {
+            const startedAt = card.dataset.lastStartedAt;
+            const badge = card.querySelector('.stat-uptime');
+            if (badge && startedAt) {
+                badge.textContent = `UP ${formatUptime(parseInt(startedAt))}`;
+            }
+        });
+    }, 1000);
+}
+
+document.addEventListener('DOMContentLoaded', startUptimeTicker);
+document.addEventListener('turbo:load', startUptimeTicker);
