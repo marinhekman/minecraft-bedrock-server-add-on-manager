@@ -9,6 +9,22 @@
             No servers found. Make sure your <code>minecraft-data</code> folders are mounted under <code>/mc-data/</code>.
         </div>
     {% else %}
+
+        {# Host memory bar #}
+        <div class="card shadow-sm mb-4 bg-dark text-white" id="hostStatsCard">
+            <div class="card-body py-2 d-flex align-items-center gap-3 flex-wrap">
+                <strong>🖥️ Host</strong>
+                <div class="flex-grow-1" style="min-width:200px">
+                    <div class="d-flex justify-content-between small mb-1">
+                        <span>Memory</span>
+                        <span id="hostMemText">–</span>
+                    </div>
+                    <div class="progress" style="height:8px">
+                        <div class="progress-bar bg-info" id="hostMemBar" role="progressbar" style="width:0%"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
         {% for data in serverData %}
             {% set server = data.server %}
             <div class="card shadow-sm mb-4"
@@ -26,6 +42,9 @@
                         {% endif %}
                         {% if server.isRunning %}
                             <span class="badge bg-success">● Running</span>
+                            <span class="badge bg-dark stat-uptime" title="Uptime">UP –</span>
+                            <span class="badge bg-dark stat-cpu" title="CPU usage">CPU –</span>
+                            <span class="badge bg-dark stat-mem" title="Memory usage">MEM –</span>
                         {% else %}
                             <span class="badge bg-danger">● Stopped</span>
                         {% endif %}
@@ -230,7 +249,6 @@
                                    list="commandHistory{{ server.name }}">
                             <datalist id="commandHistory{{ server.name }}"></datalist>
                             <button type="submit" class="btn btn-sm btn-outline-secondary">▶ Send</button>
-                            <button type="button" class="btn btn-sm btn-outline-danger" data-clear-history="{{ server.name }}" title="Clear history">🗑</button>
                         </div>
                     </form>
                 </div>
