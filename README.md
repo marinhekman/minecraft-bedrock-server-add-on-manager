@@ -8,10 +8,6 @@ A web-based dashboard for managing add-ons (behaviour packs and resource packs) 
 ![Bootstrap](https://img.shields.io/badge/Bootstrap-5-blueviolet)
 ![License](https://img.shields.io/badge/license-AGPL--v3-blue)
 
-## Motivation
-
-While the [Bedrock Server Manager](https://bedrock-server-manager.readthedocs.io/en/stable/) is a superior tool for managing Minecraft Bedrock server add-ons, it currently supports only x64-based processors. If you want to run a server on an ARM device, such as a Raspberry Pi, you may find yourself frustrated by having to manage add-on files manually. This project was created to fill that gap: the Add-On Manager is designed specifically to make add-on management on ARM-based systems easier and more convenient.
-
 ## Features
 
 - 📋 Overview of all user-installed add-ons per server with enabled/disabled status
@@ -20,6 +16,9 @@ While the [Bedrock Server Manager](https://bedrock-server-manager.readthedocs.io
 - 🗑️ Remove add-ons with a confirmation dialog
 - 🔄 Restart your Minecraft server directly from the dashboard
 - 🟦 Live **Loaded** status per add-on — shows whether each pack was actually loaded by the server on its last boot, updated automatically every 10 seconds via the Docker logs API
+- 📊 Live **CPU%, memory usage and uptime** per server container, updated every 10 seconds
+- 🖥️ Host machine **memory usage bar** showing total/used/available RAM
+- 💻 **Send commands** to a running server directly from the dashboard, with a pre-configured command list loaded from a shared `mc-commands.txt` file on the host
 - 🐳 Automatic detection of running `itzg/minecraft-bedrock-server` containers via Docker API — no manual container name configuration needed
 - ⚠️ Dependency validation — warns when a pack has unmet UUID dependencies, with a clickable popover showing the missing UUIDs
 - ⚙️ Built-in system packs (vanilla, chemistry, experimental) are shown separately in a collapsed section, keeping the main view clean
@@ -78,9 +77,37 @@ docker run -d \
   --restart unless-stopped \
   --env-file .env \
   -v /var/run/docker.sock:/var/run/docker.sock \
+  -v /proc/meminfo:/proc/meminfo:ro \
+  -v /home/user/mc-commands.txt:/mc-data/commands.txt:ro \
   -v /home/user/minecraft-data:/mc-data/server1 \
   -p 8080:80 \
   minecraft-bedrock-server-add-on-manager
+```
+
+The `mc-commands.txt` file is optional. If present, its lines are shown as suggestions in the command input on the dashboard. Lines starting with `#` are treated as comments and ignored. Example:
+
+```
+# Game rules
+gamerule keepInventory true
+gamerule keepInventory false
+gamerule doDaylightCycle false
+gamerule doDaylightCycle true
+gamerule doMobSpawning false
+gamerule doMobSpawning true
+
+# Time
+time set day
+time set night
+
+# Weather
+weather clear
+weather rain
+
+# Difficulty
+difficulty peaceful
+difficulty easy
+difficulty normal
+difficulty hard
 ```
 
 To manage **multiple servers**, add a `-v` flag for each:
@@ -91,6 +118,7 @@ docker run -d \
   --restart unless-stopped \
   --env-file .env \
   -v /var/run/docker.sock:/var/run/docker.sock \
+  -v /proc/meminfo:/proc/meminfo:ro \
   -v /home/user/minecraft-data:/mc-data/server1 \
   -v /home/user/second-minecraft-data:/mc-data/server2 \
   -p 8080:80 \
