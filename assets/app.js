@@ -3,6 +3,8 @@ import * as bootstrap from 'bootstrap';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import './styles/app.css';
 
+// ── Bootstrap popovers ────────────────────────────────────────────────────────
+
 function initPopovers() {
     document.querySelectorAll('[data-bs-toggle="popover"]').forEach(el => {
         const pop = new bootstrap.Popover(el, {
@@ -28,6 +30,37 @@ function initPopovers() {
 document.addEventListener('DOMContentLoaded', initPopovers);
 document.addEventListener('turbo:load', initPopovers);
 
+// ── Host stats ────────────────────────────────────────────────────────────────
+
+function updateHostStats() {
+    fetch('/host/stats')
+        .then(r => r.json())
+        .then(data => {
+            const text = document.getElementById('hostMemText');
+            const bar  = document.getElementById('hostMemBar');
+            if (!text || !bar || data.error) return;
+            text.textContent = `${data.usedMb} MB / ${data.totalMb} MB (${data.usedPercent}%)`;
+            bar.style.width  = data.usedPercent + '%';
+            bar.className    = 'progress-bar ' + (
+                data.usedPercent > 90 ? 'bg-danger' :
+                data.usedPercent > 70 ? 'bg-warning' : 'bg-info'
+            );
+        })
+        .catch(() => {});
+}
+
+let hostStatsInterval = null;
+
+function initHostStats() {
+    if (!document.getElementById('hostStatsCard')) return;
+    if (hostStatsInterval) clearInterval(hostStatsInterval);
+    updateHostStats();
+    hostStatsInterval = setInterval(updateHostStats, 10000);
+}
+
+document.addEventListener('DOMContentLoaded', initHostStats);
+document.addEventListener('turbo:load', initHostStats);
+
 // ── Command list (from server-side text file) ─────────────────────────────────
 
 let cachedCommands = [];
@@ -38,8 +71,7 @@ function loadCommands() {
         .then(commands => {
             cachedCommands = commands;
             document.querySelectorAll('[data-command-form]').forEach(form => {
-                const serverName = form.dataset.commandForm;
-                renderCommandList(serverName);
+                renderCommandList(form.dataset.commandForm);
             });
         })
         .catch(() => {});
@@ -58,27 +90,34 @@ function renderCommandList(serverName) {
 
 function initCommandForms() {
     document.querySelectorAll('[data-command-form]').forEach(form => {
-        const serverName = form.dataset.commandForm;
-        renderCommandList(serverName);
-
-        // Remove clear history button behaviour — no longer needed
-        const clearBtn = form.querySelector('[data-clear-history]');
-        if (clearBtn) clearBtn.remove();
+        renderCommandList(form.dataset.commandForm);
     });
 }
 
 document.addEventListener('DOMContentLoaded', () => { loadCommands(); initCommandForms(); });
 document.addEventListener('turbo:load', () => { loadCommands(); initCommandForms(); });
 
+// ── Uptime formatter ──────────────────────────────────────────────────────────
+
+function formatUptime(startedAt) {
+    if (!startedAt) return '–';
+    const secs = Math.floor(Date.now() / 1000) - startedAt;
+    const d = Math.floor(secs / 86400);
+    const h = Math.floor((secs % 86400) / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    if (d > 0) return `${d}d ${h}h ${m}m`;
+    if (h > 0) return `${h}h ${m}m`;
+    return `${m}m`;
+}
+
+// ── Status polling ────────────────────────────────────────────────────────────
+
 function updateStatusBadges(card, loadedUuids) {
     card.querySelectorAll('tr[data-uuid]').forEach(row => {
         const uuid  = row.dataset.uuid;
         const badge = row.querySelector('.status-badge');
         if (!badge) return;
-
-        const isDisabled = badge.classList.contains('bg-secondary');
-        if (isDisabled) return; // never change disabled badges via polling
-
+        if (badge.classList.contains('bg-secondary')) return;
         if (loadedUuids.includes(uuid)) {
             badge.className = 'badge bg-info status-badge';
             badge.textContent = '✅ Loaded';
@@ -117,13 +156,20 @@ function pollStatus(card) {
             const loadedUuids = data.loadedUuids || [];
             const startedAt   = String(data.startedAt);
 
-            // Update stats badges
-            const uptimeBadge = card.querySelector('.stat-uptime');
-            const cpuBadge    = card.querySelector('.stat-cpu');
-            const memBadge    = card.querySelector('.stat-mem');
-            if (uptimeBadge) {
-                uptimeBadge.textContent = `UP ${formatUptime(data.startedAt)}`;
+            // Detect restart
+            if (card.dataset.lastStartedAt && card.dataset.lastStartedAt !== startedAt) {
+                resetToEnabled(card);
+                card.dataset.pollDone = 'false';
             }
+            card.dataset.lastStartedAt = startedAt;
+
+            // Update uptime badge
+            const uptimeBadge = card.querySelector('.stat-uptime');
+            if (uptimeBadge) uptimeBadge.textContent = `UP ${formatUptime(data.startedAt)}`;
+
+            // Update stats badges
+            const cpuBadge = card.querySelector('.stat-cpu');
+            const memBadge = card.querySelector('.stat-mem');
             if (cpuBadge && memBadge) {
                 if (data.stats) {
                     cpuBadge.textContent = `CPU ${data.stats.cpu}%`;
@@ -134,28 +180,13 @@ function pollStatus(card) {
                 }
             }
 
-            // Detect restart — startedAt changed since last poll
-            if (card.dataset.lastStartedAt && card.dataset.lastStartedAt !== startedAt) {
-                resetToEnabled(card);
-                card.dataset.pollDone = 'false';
-            }
-            card.dataset.lastStartedAt = startedAt;
-
-            // Server not running yet — keep polling
-            if (!data.running) {
-                card.dataset.pollDone = 'false';
-                return;
-            }
-
-            // No loaded uuids yet — server still starting up, keep polling
-            if (loadedUuids.length === 0) {
+            if (!data.running || loadedUuids.length === 0) {
                 card.dataset.pollDone = 'false';
                 return;
             }
 
             updateStatusBadges(card, loadedUuids);
 
-            // Stop polling once all enabled packs are confirmed loaded
             if (allEnabledAreLoaded(card, loadedUuids)) {
                 card.dataset.pollDone = 'true';
             }
@@ -171,16 +202,13 @@ function initPolling() {
     const cards = document.querySelectorAll('.card[data-status-url]');
     if (cards.length === 0) return;
 
-    // Clear any existing interval from previous Turbo navigation
     if (pollingInterval) {
         clearInterval(pollingInterval);
         pollingInterval = null;
     }
 
-    // Immediate first poll
     cards.forEach(pollStatus);
 
-    // Then every 10 seconds
     pollingInterval = setInterval(() => {
         cards.forEach(card => {
             if (card.dataset.pollDone !== 'true') {
@@ -190,8 +218,5 @@ function initPolling() {
     }, 10000);
 }
 
-// Fire on initial page load
 document.addEventListener('DOMContentLoaded', initPolling);
-
-// Fire on Turbo Drive navigation (replaces DOMContentLoaded for subsequent visits)
 document.addEventListener('turbo:load', initPolling);
