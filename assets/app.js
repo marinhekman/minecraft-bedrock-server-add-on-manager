@@ -180,23 +180,27 @@ function pollStatus(card) {
                 }
             }
 
+            // Update uptime badge
+            const uptimeBadge = card.querySelector('.stat-uptime');
+            if (uptimeBadge) uptimeBadge.textContent = `UP ${formatUptime(data.startedAt)}`;
+
+            // Update stats badges
+            const cpuBadge = card.querySelector('.stat-cpu');
+            const memBadge = card.querySelector('.stat-mem');
+            if (cpuBadge && memBadge) {
+                if (data.stats) {
+                    cpuBadge.textContent = `CPU ${data.stats.cpu}%`;
+                    memBadge.textContent = `MEM ${data.stats.memUsageMb}MB / ${data.stats.memLimitMb}MB (${data.stats.memPercent}%)`;
+                } else {
+                    cpuBadge.textContent = 'CPU –';
+                    memBadge.textContent = 'MEM –';
+                }
+            }
+
             if (!data.running || loadedUuids.length === 0) {
                 card.dataset.pollDone = 'false';
                 return;
             }
-
-            updateStatusBadges(card, loadedUuids);
-
-            if (allEnabledAreLoaded(card, loadedUuids)) {
-                card.dataset.pollDone = 'true';
-            }
-        })
-        .catch(() => {
-            card.dataset.pollDone = 'false';
-        });
-}
-
-let pollingInterval = null;
 
 function initPolling() {
     const cards = document.querySelectorAll('.card[data-status-url]');
