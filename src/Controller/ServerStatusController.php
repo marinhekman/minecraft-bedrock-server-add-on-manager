@@ -3,6 +3,7 @@
 namespace App\Controller;
 
 use App\Service\AddonScanner;
+use App\Service\DockerClient;
 use App\Service\PackLoadChecker;
 use App\Service\ServerRegistry;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -15,6 +16,7 @@ class ServerStatusController extends AbstractController
         private readonly ServerRegistry  $serverRegistry,
         private readonly AddonScanner    $addonScanner,
         private readonly PackLoadChecker $packLoadChecker,
+        private readonly DockerClient    $dockerClient,
     ) {}
 
     #[Route('/server/{serverName}/status', name: 'server_status', methods: ['GET'])]
@@ -28,10 +30,20 @@ class ServerStatusController extends AbstractController
 
         $packs = $this->addonScanner->scan($server);
 
+        $stats = null;
+        if ($server->containerId !== null && $server->isRunning()) {
+            try {
+                $stats = $this->dockerClient->getContainerStats($server->containerId);
+            } catch (\RuntimeException) {
+                // Stats unavailable — not critical
+            }
+        }
+
         return $this->json([
             'running'     => $server->isRunning(),
             'startedAt'   => $server->startedAt,
             'loadedUuids' => $this->packLoadChecker->getLoadedUuids($server, $packs),
+            'stats'       => $stats,
         ]);
     }
 }
