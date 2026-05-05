@@ -163,10 +163,6 @@ function pollStatus(card) {
             }
             card.dataset.lastStartedAt = startedAt;
 
-            // Update uptime badge
-            const uptimeBadge = card.querySelector('.stat-uptime');
-            if (uptimeBadge) uptimeBadge.textContent = `UP ${formatUptime(data.startedAt)}`;
-
             // Update stats badges
             const cpuBadge = card.querySelector('.stat-cpu');
             const memBadge = card.querySelector('.stat-mem');
