@@ -22,6 +22,8 @@ RUN set -eux; \
 	apt-get install -y --no-install-recommends \
 		file \
 		git \
+		supervisor \
+		procps \
 	; \
 	rm -rf /var/lib/apt/lists/*; \
 	install-php-extensions \
@@ -30,6 +32,7 @@ RUN set -eux; \
 		intl \
 		opcache \
 		zip \
+		redis \
 	;
 
 # https://getcomposer.org/doc/03-cli.md#composer-allow-superuser
@@ -43,6 +46,11 @@ ENV PHP_INI_SCAN_DIR=":$PHP_INI_DIR/app.conf.d"
 COPY --link frankenphp/conf.d/10-app.ini $PHP_INI_DIR/app.conf.d/
 COPY --link --chmod=755 frankenphp/docker-entrypoint.sh /usr/local/bin/docker-entrypoint
 COPY --link frankenphp/Caddyfile /etc/frankenphp/Caddyfile
+
+# Supervisor
+RUN mkdir -p /var/log/supervisor/ /etc/supervisor.d/
+COPY --link frankenphp/supervisor/supervisord.conf /etc/supervisord.conf
+COPY --link frankenphp/supervisor/supervisor.d/*.ini /etc/supervisor.d/
 
 ENTRYPOINT ["docker-entrypoint"]
 

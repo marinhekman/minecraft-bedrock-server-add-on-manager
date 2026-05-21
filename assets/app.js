@@ -190,6 +190,10 @@ function pollStatus(card) {
                     memBadge.textContent = 'MEM –';
                 }
             }
+            const playersBadge = card.querySelector('.stat-players');
+            if (playersBadge) {
+                playersBadge.textContent = `👥 ${data.playerCount ?? 0}`;
+            }
 
             if (!data.running || loadedUuids.length === 0) {
                 card.dataset.pollDone = 'false';

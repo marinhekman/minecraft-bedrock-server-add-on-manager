@@ -36,6 +36,10 @@
 
 	{$CADDY_SERVER_EXTRA_DIRECTIVES}
 
+	# WebSocket proxy — forward /ws to Ratchet on port 8082
+	@ws path /ws
+	reverse_proxy @ws localhost:8082
+
 	# Disable Topics tracking if not enabled explicitly: https://github.com/jkarlin/topics
 	header ?Permissions-Policy "browsing-topics=()"
 
