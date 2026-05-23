@@ -8,7 +8,7 @@ use Symfony\Component\Routing\Attribute\Route;
 
 class CommandsController extends AbstractController
 {
-    private const COMMANDS_FILE = '/mc-data/commands.txt';
+    private const COMMANDS_FILE = '/mc-data/config/commands.txt';
 
     #[Route('/commands', name: 'commands', methods: ['GET'])]
     public function index(): JsonResponse

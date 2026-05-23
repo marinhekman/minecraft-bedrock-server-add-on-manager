@@ -1,4 +1,6 @@
 twig:
+    globals:
+        app_title: '%env(APP_TITLE_RAW)%'
     file_name_pattern: '*.twig'
 
 when@test:

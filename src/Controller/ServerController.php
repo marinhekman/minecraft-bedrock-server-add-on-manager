@@ -7,6 +7,7 @@ use App\Service\ServerRegistry;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
 
 #[Route('/server/{serverName}')]
@@ -72,5 +73,21 @@ class ServerController extends AbstractController
         }
 
         return $this->redirectToRoute('dashboard');
+    }
+
+    #[Route('/image', name: 'server_image', methods: ['GET'])]
+    public function image(string $serverName): Response
+    {
+        $server = $this->serverRegistry->get($serverName);
+        if ($server === null) {
+            throw $this->createNotFoundException();
+        }
+
+        $path = $server->dataPath . '/mc-server-manager/image.png';
+        if (!file_exists($path)) {
+            throw $this->createNotFoundException();
+        }
+
+        return new \Symfony\Component\HttpFoundation\BinaryFileResponse($path);
     }
 }

@@ -4,6 +4,7 @@ namespace App\Controller;
 
 use App\Service\AddonScanner;
 use App\Service\DependencyChecker;
+use App\Service\ServerMetaReader;
 use App\Service\ServerRegistry;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Response;
@@ -15,9 +16,10 @@ class DashboardController extends AbstractController
         private readonly ServerRegistry    $serverRegistry,
         private readonly AddonScanner      $addonScanner,
         private readonly DependencyChecker $dependencyChecker,
+        private readonly ServerMetaReader  $serverMetaReader
     ) {}
 
-    #[Route('/', name: 'dashboard')]
+    #[Route('/admin', name: 'admin_dashboard')]
     public function index(): Response
     {
         $servers = $this->serverRegistry->getAll();
@@ -36,8 +38,10 @@ class DashboardController extends AbstractController
                 ];
             }, $userPacks);
 
+            $meta = $this->serverMetaReader->read($server->dataPath);
             $serverData[] = [
                 'server'        => $server,
+                'meta'          => $meta,
                 'packs'         => array_values($packsWithDeps),
                 'systemPacks'   => array_values($systemPacks),
                 'enabledCount'  => count(array_filter($userPacks, fn($p) => $p->enabled)),

@@ -1,0 +1,31 @@
+security:
+    password_hashers:
+        App\Security\User:
+            algorithm: bcrypt
+
+    providers:
+        yaml_users:
+            id: App\Security\UserProvider
+
+    firewalls:
+        dev:
+            pattern: ^/(_(profiler|wdt)|css|images|js)/
+            security: false
+
+        main:
+            lazy: true
+            provider: yaml_users
+            form_login:
+                login_path: login
+                check_path: login
+                default_target_path: admin_dashboard
+                username_parameter: username
+                password_parameter: password
+            logout:
+                path: logout
+                target: home
+
+    access_control:
+        - { path: ^/login, roles: PUBLIC_ACCESS }
+        - { path: ^/admin, roles: ROLE_ADMIN }
+        - { path: ^/, roles: PUBLIC_ACCESS }

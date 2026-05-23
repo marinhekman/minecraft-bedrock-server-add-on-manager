@@ -14,9 +14,9 @@ if ! docker ps --filter "name=mc-docker-api" --filter "status=running" -q | grep
     docker rm mc-docker-api 2>/dev/null || true
     docker run -d \
         --name mc-docker-api \
-        -p 2375:2375 \
         --network mc-net \
         --restart unless-stopped \
+        -p 2375:2375 \
         -v /var/run/docker.sock:/var/run/docker.sock \
         docker-hub.mspchallenge.info/cradlewebmaster/docker-api:latest
 fi
@@ -35,10 +35,11 @@ fi
 # Build volume args array
 VOLUMES=()
 VOLUMES+=(-v /proc/meminfo:/proc/meminfo:ro)
+VOLUMES+=(-v "$HOME/mc-server-manager-data:/mc-data/config:ro")
 
-# Add commands.txt if it exists
-if [ -f "$HOME/mc-commands.txt" ]; then
-    VOLUMES+=(-v "$HOME/mc-commands.txt:/mc-data/commands.txt:ro")
+# Convenience: mount avatars to public folder for web serving
+if [ -d "$HOME/mc-server-manager-data/avatars" ]; then
+    VOLUMES+=(-v "$HOME/mc-server-manager-data/avatars:/app/public/avatars:ro")
 fi
 
 # Add minecraft-data (no number) first
