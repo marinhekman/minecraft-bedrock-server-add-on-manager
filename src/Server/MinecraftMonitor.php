@@ -3,7 +3,9 @@
 namespace App\Server;
 
 use App\Service\DockerClient;
+use App\Service\GlobalMetaReader;
 use App\Service\RedisClient;
+use App\Service\VoteManager;
 use Psr\Http\Message\ResponseInterface;
 use React\EventLoop\Loop;
 use React\EventLoop\LoopInterface;
@@ -36,10 +38,15 @@ class MinecraftMonitor
     /** @var array<string, array<string, string[]>> Pack name → UUIDs index per server */
     private array $packNameIndex = [];
 
+    /** @var array<string, bool> Tracks which servers had an active grace period last cycle */
+    private array $inGracePeriod = [];
+
     public function __construct(
         private readonly DockerClient    $dockerClient,
         private readonly RedisClient     $redisClient,
         private readonly WebSocketServer $wsServer,
+        private readonly VoteManager     $voteManager,
+        private readonly GlobalMetaReader $globalMetaReader,
         private readonly string          $mcDataPath,
         private readonly string          $dockerApiUrl,
     ) {
@@ -60,6 +67,8 @@ class MinecraftMonitor
 
     public function scan(): void
     {
+        $this->dockerClient->clearInspectCache();
+
         if (!is_dir($this->mcDataPath)) {
             return;
         }
@@ -89,9 +98,22 @@ class MinecraftMonitor
     public function refreshStats(): void
     {
         foreach ($this->servers as $name => $server) {
+            // Grace period expiry check.
+            if ($this->inGracePeriod[$name] ?? false) {
+                $graceUntil = $this->redisClient->getServerEmpty($name);
+
+                if ($graceUntil === null) {
+                    // Key has expired — grace period is over.
+                    unset($this->inGracePeriod[$name]);
+                    $this->output->writeln("<info>[$name] Grace period expired — checking auto-stop</info>");
+                    $this->voteManager->triggerAutoStopIfNeeded($name);
+                }
+            }
+
             if (empty($server['containerId'])) {
                 continue;
             }
+
             try {
                 $stats = $this->dockerClient->getContainerStats($server['containerId']);
                 $this->redisClient->setStats($name, $stats);
@@ -106,6 +128,14 @@ class MinecraftMonitor
         $container = $this->findContainer($name);
         $existing  = $this->servers[$name] ?? null;
 
+        $memoryProfile = 'medium';
+        if ($container !== null) {
+            $inspect       = $this->dockerClient->inspectContainer($container['Id']);
+            $memoryProfile = $inspect !== null
+                ? $this->dockerClient->getMemoryProfile($inspect)
+                : 'medium';
+        }
+
         $serverData = [
             'name'            => $name,
             'containerId'     => $container['Id'] ?? null,
@@ -116,6 +146,7 @@ class MinecraftMonitor
             'port'            => $this->resolvePort($container),
             'startedAt'       => $this->resolveStartedAt($container),
             'running'         => ($container['State'] ?? '') === 'running',
+            'memoryProfile'   => $memoryProfile,
         ];
 
         $this->servers[$name] = $serverData;
@@ -127,9 +158,23 @@ class MinecraftMonitor
                 $this->openLogStream($name, $serverData);
             }
         } elseif (!$serverData['running']) {
+            $wasRunning = $existing !== null && ($existing['running'] ?? false);
+
             $this->closeLogStream($name);
             $this->redisClient->setLoadedUuids($name, []);
             $this->updatePlayerCount($name, 0);
+            $this->redisClient->clearServerEmpty($name);
+            unset($this->inGracePeriod[$name]);
+
+            if ($wasRunning) {
+                $this->output->writeln("<info>[$name] Container stopped — checking vote triggers</info>");
+                foreach ($this->redisClient->getAllServerNames() as $candidate) {
+                    if ($candidate === $name) {
+                        continue;
+                    }
+                    $this->voteManager->checkAndTrigger($candidate);
+                }
+            }
         }
 
         $this->wsServer->broadcastServerUpdate($name);
@@ -245,7 +290,17 @@ class MinecraftMonitor
             }
 
             if (preg_match(self::PLAYER_JOIN_REGEX, $line, $m)) {
-                $this->updatePlayerCount($serverName, ($this->playerCounts[$serverName] ?? 0) + 1);
+                $newCount = ($this->playerCounts[$serverName] ?? 0) + 1;
+                $this->updatePlayerCount($serverName, $newCount);
+
+                // Cancel any active grace period — a player has reconnected.
+                if ($this->redisClient->getServerEmpty($serverName) !== null) {
+                    $this->redisClient->clearServerEmpty($serverName);
+                    unset($this->inGracePeriod[$serverName]);
+                    $this->output->writeln("<info>[$serverName] Player rejoined during grace period — grace cancelled</info>");
+                    $this->wsServer->broadcastServerUpdate($serverName);
+                }
+
                 $this->output->writeln("<comment>[$serverName] Player joined: {$m[1]}</comment>");
                 continue;
             }
@@ -254,6 +309,17 @@ class MinecraftMonitor
                 $count = max(0, ($this->playerCounts[$serverName] ?? 0) - 1);
                 $this->updatePlayerCount($serverName, $count);
                 $this->output->writeln("<comment>[$serverName] Player left: {$m[1]}</comment>");
+
+                if ($count === 0) {
+                    $grace = $this->globalMetaReader->read()->serverEmptyGrace;
+                    $now   = time();
+
+                    $this->redisClient->setServerEmpty($serverName, $now, $grace);
+                    $this->inGracePeriod[$serverName] = true;
+                    $this->output->writeln("<info>[$serverName] Server empty — grace period started ({$grace}s)</info>");
+                    $this->wsServer->broadcastServerUpdate($serverName);
+                }
+
                 continue;
             }
         }

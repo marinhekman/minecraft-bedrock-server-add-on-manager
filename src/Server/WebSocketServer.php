@@ -3,6 +3,8 @@
 namespace App\Server;
 
 use App\Service\RedisClient;
+use App\Service\GlobalMetaReader;
+use App\Service\VoteManager;
 use Ratchet\ConnectionInterface;
 use Ratchet\MessageComponentInterface;
 use Symfony\Component\Console\Output\NullOutput;
@@ -16,7 +18,9 @@ class WebSocketServer implements MessageComponentInterface
     private OutputInterface $output;
 
     public function __construct(
-        private readonly RedisClient $redisClient,
+        private readonly RedisClient    $redisClient,
+        private readonly VoteManager    $voteManager,
+        private readonly GlobalMetaReader $globalMetaReader,
     ) {
         $this->clients = new \SplObjectStorage();
         $this->output  = new NullOutput();
@@ -131,11 +135,41 @@ class WebSocketServer implements MessageComponentInterface
 
     private function buildSingleServerState(string $name): array
     {
+        $server = $this->redisClient->getServer($name);
+
         return [
-            'server'      => $this->redisClient->getServer($name),
+            'server'      => $server,
             'playerCount' => $this->redisClient->getPlayerCount($name),
             'loadedUuids' => $this->redisClient->getLoadedUuids($name),
             'stats'       => $this->redisClient->getStats($name),
+            'votes'       => [
+                'count'          => $this->voteManager->getActiveVoteCount($name),
+                'threshold'      => $this->voteManager->getThreshold($name),
+                'voters'         => $this->voteManager->getActiveVoters($name),
+                'cooldown'       => $this->redisClient->hasCooldown($name),
+                'blockingReason' => $this->voteManager->getBlockingReason($name),
+                'blockingDetail' => $this->voteManager->getBlockingDetail($name),
+            ],
+            'memoryProfile'      => $server['memoryProfile'] ?? 'medium',
+            'graceUntil'         => $this->resolveGraceUntil($name, $server),
         ];
+    }
+
+    private function resolveGraceUntil(string $name, ?array $server): ?int
+    {
+        if (!($server['running'] ?? false)) {
+            return null;
+        }
+
+        if ($this->redisClient->getPlayerCount($name) > 0) {
+            return null;
+        }
+
+        $graceStartedAt = $this->redisClient->getServerEmpty($name);
+        if ($graceStartedAt === null) {
+            return null;
+        }
+
+        return $graceStartedAt + $this->globalMetaReader->read()->serverEmptyGrace;
     }
 }

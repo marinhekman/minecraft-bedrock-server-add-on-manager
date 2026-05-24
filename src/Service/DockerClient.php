@@ -6,6 +6,9 @@ class DockerClient
 {
     private const API_VERSION = 'v1.41';
 
+    /** @var array<string, array> In-memory cache for inspectContainer(), cleared per scan cycle. */
+    private array $inspectCache = [];
+
     public function __construct(
         private readonly string $dockerApiUrl = 'http://docker-api:2375',
     ) {}
@@ -22,7 +25,16 @@ class DockerClient
 
     public function inspectContainer(string $id): ?array
     {
-        return $this->request('GET', sprintf('/containers/%s/json', $id));
+        if (!isset($this->inspectCache[$id])) {
+            $this->inspectCache[$id] = $this->request('GET', sprintf('/containers/%s/json', $id));
+        }
+
+        return $this->inspectCache[$id];
+    }
+
+    public function clearInspectCache(): void
+    {
+        $this->inspectCache = [];
     }
 
     public function restartContainer(string $id): void
@@ -181,5 +193,30 @@ class DockerClient
         }
 
         return $raw ?: '';
+    }
+
+    public function stopContainer(string $id): void
+    {
+        $this->request('POST', sprintf('/containers/%s/stop', $id));
+    }
+
+    /**
+     * Extracts the MEMORY_PROFILE env var from inspect data.
+     * Returns 'medium' if the variable is absent.
+     *
+     * @param array $inspectData Return value of inspectContainer()
+     */
+    public function getMemoryProfile(array $inspectData): string
+    {
+        foreach ($inspectData['Config']['Env'] ?? [] as $env) {
+            if (str_starts_with($env, 'MEMORY_PROFILE=')) {
+                $value = substr($env, strlen('MEMORY_PROFILE='));
+                if (in_array($value, ['low', 'medium', 'high'], true)) {
+                    return $value;
+                }
+            }
+        }
+
+        return 'medium';
     }
 }

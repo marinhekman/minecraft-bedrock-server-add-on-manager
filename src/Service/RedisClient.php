@@ -125,7 +125,7 @@ class RedisClient
         return $counts;
     }
 
-    // ── Heartbeats ────────────────────────────────────────────────────────────
+// ── Heartbeats ────────────────────────────────────────────────────────────
 
     public function setHeartbeat(string $gamertag): void
     {
@@ -136,5 +136,60 @@ class RedisClient
     {
         $keys = $this->redis->keys('heartbeat:*');
         return array_map(fn($k) => str_replace('heartbeat:', '', $k), $keys);
+    }
+
+    // ── Vote cooldown ─────────────────────────────────────────────────────────
+
+    public function setCooldown(string $serverName, int $ttl): void
+    {
+        $this->redis->setex("vote_cooldown:$serverName", $ttl, '1');
+    }
+
+    public function hasCooldown(string $serverName): bool
+    {
+        return (bool) $this->redis->exists("vote_cooldown:$serverName");
+    }
+
+    // ── Grace period ──────────────────────────────────────────────────────────
+
+    public function setServerEmpty(string $serverName, int $timestamp, int $ttl): void
+    {
+        $this->redis->setex("server_empty:$serverName", $ttl, (string) $timestamp);
+    }
+
+    public function getServerEmpty(string $serverName): ?int
+    {
+        $val = $this->redis->get("server_empty:$serverName");
+        return $val !== null && $val !== false ? (int) $val : null;
+    }
+
+    public function clearServerEmpty(string $serverName): void
+    {
+        $this->redis->del(["server_empty:$serverName"]);
+    }
+
+    // ── Clear votes for server ────────────────────────────────────────────────
+
+    public function clearVotesForServer(string $serverName): void
+    {
+        foreach ($this->getVotes() as $gamertag => $votedFor) {
+            if ($votedFor === $serverName) {
+                $this->redis->hdel('votes', [$gamertag]);
+            }
+        }
+    }
+
+    // ── Raw key operations (used by TestStateSeeder) ──────────────────────────
+
+    public function keys(string $pattern): array
+    {
+        return $this->redis->keys($pattern) ?? [];
+    }
+
+    public function del(array $keys): void
+    {
+        if ($keys !== []) {
+            $this->redis->del($keys);
+        }
     }
 }

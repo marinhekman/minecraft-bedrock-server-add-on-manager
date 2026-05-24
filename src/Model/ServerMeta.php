@@ -5,9 +5,11 @@ namespace App\Model;
 class ServerMeta
 {
     public function __construct(
-        public readonly ?string $displayName = null,
-        public readonly ?string $description = null,
-        public readonly ?string $imagePath   = null,
+        public readonly ?string $displayName    = null,
+        public readonly ?string $description    = null,
+        public readonly ?string $imagePath      = null,
+        public readonly ?int    $voteThreshold  = null,
+        public readonly ?int    $voteCooldown   = null,
     ) {}
 
     /**

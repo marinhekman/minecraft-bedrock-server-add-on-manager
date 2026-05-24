@@ -9,3 +9,8 @@
 
 controllers:
     resource: routing.controllers
+
+when@dev:
+    dev_test_state:
+        resource: ../src/Controller/Dev/
+        type: attribute
