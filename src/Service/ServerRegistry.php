@@ -50,6 +50,7 @@ class ServerRegistry
             containerStatus: $data['containerStatus'] ?? null,
             port:            $data['port'] ?? null,
             startedAt:       $data['startedAt'] ?? null,
+            memoryProfile:   $data['memoryProfile'] ?? 'medium',
         );
     }
 }

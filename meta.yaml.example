@@ -1,0 +1,37 @@
+# ─────────────────────────────────────────────────────────────
+# Minecraft Bedrock Server Manager — global configuration
+# Copy to ~/mc-server-manager-data/meta.yaml before starting.
+# ─────────────────────────────────────────────────────────────
+
+# Resource limits — defines which combinations of servers may run simultaneously.
+# Each entry is one valid combination. A server can start if the currently running
+# servers plus the candidate fit within at least one combination.
+#
+# Memory profiles are declared per-server container via -e MEMORY_PROFILE=low|medium|high
+# in mc-server-start.sh. Default if absent: medium.
+#
+# Examples with the config below:
+#   Nothing running       + start high   → ✅ fits [high: 1, low: 1]
+#   Nothing running       + start medium → ✅ fits [medium: 2]
+#   high running          + start low    → ✅ fits [high: 1, low: 1]
+#   high running          + start medium → ❌ no match
+#   medium running        + start medium → ✅ fits [medium: 2]
+#   medium running        + start high   → ❌ no match
+#   medium + low running  + start any    → ❌ no match
+resource_limits:
+    - high: 1
+      low: 1
+    - medium: 2
+
+# Votes required to automatically start a stopped server.
+# Active = voter has sent a heartbeat within the last 120 seconds.
+# Override per server in mc-server-manager/meta.yaml inside the server data folder.
+vote_threshold: 3
+
+# Seconds before another auto-start is allowed after a server starts.
+vote_cooldown: 300
+
+# Seconds an empty server stays running after the last player leaves.
+# Shows a countdown on the server card during this window.
+server_empty_grace: 60
+

@@ -137,6 +137,18 @@ display_name: "My Creative World"
 description: "Our main survival world for the gang."
 ```
 
+### 4b. Configure global voting and resource limits
+
+```bash
+cp meta.yaml.example ~/mc-server-manager-data/meta.yaml
+```
+
+Edit `~/mc-server-manager-data/meta.yaml` to match your server hardware.
+See [`meta.yaml.example`](meta.yaml.example) for all available options and resource limit examples.
+
+To override vote settings per server, create `mc-server-manager/meta.yaml`
+inside each server data folder. See [`server-meta.yaml.example`](server-meta.yaml.example).
+
 ### 5. Run
 
 Use the provided start script which handles all containers and volume mounts:

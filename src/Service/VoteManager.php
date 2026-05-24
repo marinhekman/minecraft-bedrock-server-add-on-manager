@@ -405,5 +405,28 @@ final class VoteManager
         // MinecraftMonitor owns the output; this is a background-safe fallback.
         error_log('[VoteManager] ' . $message);
     }
+
+    public function getCooldown(string $serverName): bool
+    {
+        return $this->redis->hasCooldown($serverName);
+    }
+
+    public function getGraceUntil(string $serverName): ?int
+    {
+        $data = $this->redis->getServer($serverName);
+        if (!($data['running'] ?? false)) {
+            return null;
+        }
+        $graceStartedAt = $this->redis->getServerEmpty($serverName);
+        if ($graceStartedAt === null) {
+            return null;
+        }
+        return $graceStartedAt + $this->globalMetaReader->read()->serverEmptyGrace;
+    }
+
+    public function getGlobalMeta(): \App\Model\GlobalMeta
+    {
+        return $this->globalMetaReader->read();
+    }
 }
 

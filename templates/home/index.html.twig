@@ -39,19 +39,42 @@
 
     {# Server cards #}
     {% if serverData is empty %}
-        <div class="alert alert-warning">
-            No servers found.
-        </div>
+        <div class="alert alert-warning">No servers found.</div>
     {% else %}
+        <div id="server-cards">
         {% for data in serverData %}
             {% set server = data.server %}
-            {% set meta = data.meta %}
-            <div class="card shadow-sm mb-4"
-                 data-server="{{ server.name }}"
-                 data-status-url="{{ path('server_status', {serverName: server.name}) }}">
+            {% set meta   = data.meta %}
+            {% set loop_index = loop.index %}
 
-                <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
+            {# Medal for position #}
+            {% if loop_index == 1 %}
+                {% set medal = '👑' %}
+                {% set medalClass = 'text-warning fw-bold' %}
+            {% elseif loop_index == 2 %}
+                {% set medal = '🥈' %}
+                {% set medalClass = 'text-secondary fw-bold' %}
+            {% elseif loop_index == 3 %}
+                {% set medal = '🥉' %}
+                {% set medalClass = 'text-danger fw-bold' %}
+            {% else %}
+                {% set medal = '#' ~ loop_index %}
+                {% set medalClass = 'text-muted' %}
+            {% endif %}
+
+            <div class="card shadow-sm mb-4 {{ data.blockingReason == 'resources' and not server.isRunning ? 'opacity-75' : '' }}"
+                 data-server="{{ server.name }}"
+                 data-status-url="{{ path('server_status', {serverName: server.name}) }}"
+                 data-vote-count="{{ data.voteCount }}"
+                 data-grace-until="{{ data.graceUntil ?? '' }}"
+                 data-total-grace="{{ data.graceTotal }}"
+                 data-my-gamertag="{{ myGamertag ?? '' }}">
+
+                {# Card header #}
+                <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-2
+                    {{ data.blockingReason == 'resources' and not server.isRunning ? 'text-muted' : '' }}">
                     <div class="d-flex align-items-center gap-2">
+                        <span class="{{ medalClass }}" title="Position #{{ loop_index }}">{{ medal }}</span>
                         <h2 class="h5 mb-0">🖥️ {{ meta.getDisplayName(server.name) }}</h2>
                         {% if server.port %}
                             <span class="badge bg-secondary">:{{ server.port }}</span>
@@ -62,6 +85,12 @@
                             <span class="badge bg-primary stat-players" title="Online players">👥 –</span>
                         {% else %}
                             <span class="badge bg-danger">● Stopped</span>
+                            {% if data.blockingReason == 'resources' %}
+                                <span class="badge bg-secondary">Unavailable</span>
+                            {% endif %}
+                            {% if data.cooldown %}
+                                <span class="badge bg-warning text-dark">⏳ Starting soon...</span>
+                            {% endif %}
                         {% endif %}
                     </div>
                 </div>
@@ -83,11 +112,42 @@
                     </div>
                     {% endif %}
 
+                    {# Grace period countdown — shown on running empty server #}
+                    {% if server.isRunning and data.graceUntil %}
+                        <div class="alert alert-info py-2 grace-countdown-block" data-grace-until="{{ data.graceUntil }}">
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <span>⏱ <strong>Server stopping in <span class="grace-seconds">–</span>s</strong></span>
+                                <small class="text-muted">Waiting for players to reconnect...</small>
+                            </div>
+                            <div class="progress" style="height:6px">
+                                <div class="progress-bar bg-info grace-progress" role="progressbar" style="width:100%"></div>
+                            </div>
+                        </div>
+                    {% endif %}
+
+                    {# Blocking callouts — shown on stopped servers that can't start yet #}
+                    {% if not server.isRunning and data.blockingReason %}
+                        {% if data.blockingReason == 'players' %}
+                            <div class="alert alert-info py-2 mb-3">
+                                ⏳ <strong>Waiting for players to leave</strong><br>
+                                <small>{{ data.blockingDetail }}</small>
+                            </div>
+                        {% elseif data.blockingReason == 'grace' %}
+                            <div class="alert alert-info py-2 mb-3">
+                                ⏳ <strong>Waiting for server to stop</strong><br>
+                                <small>{{ data.blockingDetail }}</small>
+                            </div>
+                        {% elseif data.blockingReason == 'resources' %}
+                            <div class="alert alert-warning py-2 mb-3">
+                                ⚠️ <strong>Insufficient resources</strong><br>
+                                <small>{{ data.blockingDetail }}</small>
+                            </div>
+                        {% endif %}
+                    {% endif %}
+
                     {# Enabled add-ons #}
-                    {% if data.enabledPacks is empty %}
-                        <p class="text-muted mb-0 small">No add-ons enabled.</p>
-                    {% else %}
-                        <table class="table table-sm table-hover mb-0">
+                    {% if data.enabledPacks is not empty %}
+                        <table class="table table-sm table-hover mb-3">
                             <thead class="table-dark">
                                 <tr>
                                     <th>Add-on</th>
@@ -117,10 +177,63 @@
                         </table>
                     {% endif %}
 
+                    {# Vote section #}
+                    <div class="border-top pt-3 vote-section">
+                        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+
+                            {# Voter avatars + count #}
+                            <div class="d-flex align-items-center gap-2">
+                                <div class="d-flex vote-avatars">
+                                    {% for voter in data.voters|slice(0, 5) %}
+                                        <img src="{{ voter.avatarPath }}"
+                                             alt="{{ voter.gamertag }}"
+                                             title="{{ voter.gamertag }}"
+                                             class="rounded-circle border border-white"
+                                             style="width:32px;height:32px;object-fit:cover;margin-left:{{ loop.first ? '0' : '-8px' }}">
+                                    {% endfor %}
+                                    {% if data.voters|length > 5 %}
+                                        <span class="badge bg-secondary ms-1 align-self-center">+{{ data.voters|length - 5 }} more</span>
+                                    {% endif %}
+                                </div>
+                                <span class="text-muted small vote-count-text">
+                                    {{ data.voteCount }} / {{ data.voteThreshold }} votes
+                                </span>
+                            </div>
+
+                            {# Vote button #}
+                            {% if server.isRunning %}
+                                <span class="text-success small">Server is running ✅</span>
+                            {% elseif data.cooldown %}
+                                <button class="btn btn-sm btn-secondary" disabled>⏳ Starting soon...</button>
+                            {% elseif is_granted('ROLE_USER') or is_granted('ROLE_ADMIN') %}
+                                <form method="post"
+                                      action="{{ path('server_vote', {serverName: server.name}) }}"
+                                      class="vote-form">
+                                    {% if data.userHasVoted %}
+                                        <button type="submit" class="btn btn-sm btn-success">
+                                            ✓ Voted — click to retract
+                                        </button>
+                                    {% else %}
+                                        <button type="submit" class="btn btn-sm btn-outline-primary">
+                                            Vote to start
+                                        </button>
+                                    {% endif %}
+                                </form>
+                            {% endif %}
+
+                        </div>
+                    </div>
+
                 </div>
             </div>
         {% endfor %}
+        </div>
     {% endif %}
 
 </div>
+
+<script>
+    // Pass gamertag to JS for userHasVoted detection after WS updates
+    window.myGamertag = {{ myGamertag ? ('"' ~ myGamertag|e('js') ~ '"') : 'null' }};
+</script>
 {% endblock %}

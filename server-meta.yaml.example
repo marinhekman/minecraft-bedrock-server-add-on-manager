@@ -1,0 +1,16 @@
+# ─────────────────────────────────────────────────────────────
+# Per-server metadata and vote overrides
+# Place at: ~/minecraft-data/mc-server-manager/meta.yaml
+# ─────────────────────────────────────────────────────────────
+
+# Display name shown on the homepage (falls back to folder name if absent)
+display_name: "My Creative World"
+
+# Short description shown under the server image
+description: "Our main survival world for the gang."
+
+# Override the global vote_threshold for this server only (optional)
+# vote_threshold: 2
+
+# Override the global vote_cooldown for this server only (optional)
+# vote_cooldown: 120
