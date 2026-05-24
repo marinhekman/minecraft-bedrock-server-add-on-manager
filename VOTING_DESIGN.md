@@ -408,3 +408,280 @@ Last player leaves server2
     → WebSocketServer::broadcastServerUpdate(server2)  ← countdown disappears
     → no auto-stop, no vote trigger
 ```
+
+---
+
+## Testing strategy
+
+### Layers
+
+| Layer | Tool | Requires | Speed |
+|---|---|---|---|
+| Unit | PHPUnit | nothing | very fast |
+| Integration | PHPUnit + Redis | running mc-redis | fast |
+| Functional | Symfony WebTestCase | running mc-redis | fast |
+| Browser | Symfony Panther | browser + mc-redis | slow — added later |
+
+### Test folder structure
+
+```
+tests/
+    Unit/
+        VoteManagerTest.php
+        ResourceBudgetCheckerTest.php
+    Integration/
+        VoteManagerIntegrationTest.php
+    Functional/
+        HomePageTest.php
+        VoteControllerTest.php
+    Fixtures/
+        TestStateSeeder.php       ← shared by all layers AND dev controller
+        MockDockerClient.php
+src/
+    Controller/
+        Dev/
+            TestStateController.php   ← dev environment only
+```
+
+### PHPUnit suites (`phpunit.xml`)
+
+```xml
+<testsuites>
+    <testsuite name="unit">
+        <directory>tests/Unit</directory>
+    </testsuite>
+    <testsuite name="integration">
+        <directory>tests/Integration</directory>
+        <directory>tests/Functional</directory>
+    </testsuite>
+</testsuites>
+```
+
+Run unit tests only: `php bin/phpunit --testsuite unit`
+Run all: `php bin/phpunit`
+
+---
+
+## TestStateSeeder
+
+Shared class used by both PHPUnit tests and the dev `TestStateController`.
+Seeds Redis directly, bypassing `MinecraftMonitor` and `DockerClient`.
+
+```php
+class TestStateSeeder
+{
+    public function __construct(private readonly RedisClient $redis) {}
+
+    public function seedServer(
+        string  $name,
+        bool    $running,
+        string  $memoryProfile = 'medium',
+        int     $players = 0,
+        ?int    $graceUntil = null,   // Unix timestamp when grace period ends
+        bool    $cooldown = false,
+        int     $cooldownTtl = 300,
+        ?int    $startedAt = null,
+        ?int    $port = null,
+        ?string $containerId = null,
+    ): void
+
+    public function seedVote(string $gamertag, string $serverName): void
+    public function seedHeartbeat(string $gamertag, int $ttl = 120): void
+    public function seedUser(string $username, string $gamertag, string $role): void
+    public function reset(): void   // clears all vote/server/heartbeat/grace/cooldown keys
+}
+```
+
+---
+
+## Dev scenario controller
+
+Only available in the `dev` environment. Registered via `routes.yaml`:
+
+```yaml
+when@dev:
+    dev_test_state:
+        resource: ../src/Controller/Dev/
+        type: attribute
+```
+
+Routes: `GET /dev/seed/{scenario}` — seeds Redis then redirects to `/`.
+
+### Scenario presets
+
+#### `two-servers-voting`
+Two stopped servers, both with votes. server1 has more votes than server2.
+No resource conflicts. Verifies: vote counts, medal ordering (server1 on top), vote buttons.
+
+```
+server1: stopped, medium, 0 players, 2 votes (Player1 + Player2 with heartbeats)
+server2: stopped, medium, 0 players, 1 vote  (Player3 with heartbeat)
+```
+
+#### `one-running-one-voted`
+server1 is running with players. server2 is stopped with enough votes to start but blocked.
+Verifies: server1 shows "running", server2 shows "waiting for players" callout.
+
+```
+server1: running, medium, 3 players, 0 votes
+server2: stopped, medium, 3 votes (threshold = 3), blocked by server1 players
+```
+
+#### `grace-period`
+server1 just went empty, grace period active with ~45 seconds remaining.
+server2 has votes but is waiting.
+Verifies: grace countdown on server1, "waiting for server to stop" callout on server2.
+
+```
+server1: running, medium, 0 players, graceUntil = now() + 45
+server2: stopped, medium, 3 votes (threshold = 3)
+```
+
+#### `grace-expired-stopping`
+server1 grace has expired, auto-stop triggered but container not yet stopped.
+Verifies: server1 shows stopping state, server2 shows "waiting for server to stop".
+
+```
+server1: running, medium, 0 players, no grace key (expired), containerStatus = stopping
+server2: stopped, medium, 3 votes (threshold = 3)
+```
+
+#### `resource-blocked`
+server1 is running (high profile). server2 is stopped (medium profile) with votes.
+Resource limits: `[[high:1, low:1], [medium:2]]` — high + medium not a valid combination.
+Verifies: server2 shows resource blocked callout, card is greyed, voting still possible.
+
+```
+server1: running, high, 2 players, 0 votes
+server2: stopped, medium, 2 votes (threshold = 3), resource blocked
+```
+
+#### `cooldown`
+server1 was just auto-started, cooldown active.
+Verifies: server1 vote button shows "Starting soon...", cooldown badge visible.
+
+```
+server1: running, medium, 0 players, cooldown active (TTL = 240s)
+server2: stopped, medium, 1 vote
+```
+
+#### `multi-server-ranking`
+Three stopped servers with different vote counts. Tests dynamic ordering and all three medal types.
+Verifies: gold/silver/bronze medals, correct top-to-bottom ordering.
+
+```
+server1: stopped, medium, 1 vote  → should appear 3rd (bronze)
+server2: stopped, medium, 3 votes → should appear 1st (gold crown)
+server3: stopped, low,    2 votes → should appear 2nd (silver)
+```
+
+#### `anonymous`
+No heartbeats — all users inactive. Tests that vote counts show as 0 even if votes exist in Redis.
+Verifies: vote counts = 0, no voter avatars, no vote buttons for anonymous view.
+
+```
+server1: stopped, medium, votes exist in Redis but no active heartbeats
+server2: stopped, medium, votes exist in Redis but no active heartbeats
+```
+
+#### `reset`
+Clears all seeded state from Redis. Real `MinecraftMonitor` data repopulates on next scan cycle (within 30s) or container restart.
+
+---
+
+## Unit test examples
+
+### ResourceBudgetCheckerTest
+
+```php
+public function testHighBlockedByMedium(): void
+{
+    $checker = $this->makeChecker(
+        limits: [['high' => 1, 'low' => 1], ['medium' => 2]],
+        running: ['medium']
+    );
+    $this->assertFalse($checker->canStart('high'));
+}
+
+public function testLowAllowedWithHigh(): void
+{
+    $checker = $this->makeChecker(
+        limits: [['high' => 1, 'low' => 1], ['medium' => 2]],
+        running: ['high']
+    );
+    $this->assertTrue($checker->canStart('low'));
+}
+
+public function testMediumAllowedWhenEmpty(): void
+{
+    $checker = $this->makeChecker(
+        limits: [['high' => 1, 'low' => 1], ['medium' => 2]],
+        running: []
+    );
+    $this->assertTrue($checker->canStart('medium'));
+}
+
+public function testTwoMediumAllowed(): void
+{
+    $checker = $this->makeChecker(
+        limits: [['high' => 1, 'low' => 1], ['medium' => 2]],
+        running: ['medium']
+    );
+    $this->assertTrue($checker->canStart('medium'));
+}
+
+public function testThreeMediumBlocked(): void
+{
+    $checker = $this->makeChecker(
+        limits: [['high' => 1, 'low' => 1], ['medium' => 2]],
+        running: ['medium', 'medium']
+    );
+    $this->assertFalse($checker->canStart('medium'));
+}
+```
+
+### VoteManagerTest
+
+```php
+public function testAutoStartNotTriggeredDuringGracePeriod(): void
+{
+    $docker = $this->createMock(DockerClient::class);
+    $docker->expects($this->never())->method('restartContainer');
+
+    // server1 running but in grace period
+    $this->seeder->seedServer('server1', running: true, players: 0, graceUntil: time() + 30);
+    $this->seeder->seedServer('server2', running: false);
+    $this->seeder->seedVote('Player1', 'server2');
+    $this->seeder->seedHeartbeat('Player1');
+
+    $this->voteManager->checkAndTrigger('server2');
+}
+
+public function testAutoStartTriggeredWhenAllClear(): void
+{
+    $docker = $this->createMock(DockerClient::class);
+    $docker->expects($this->once())->method('restartContainer');
+
+    $this->seeder->seedServer('server1', running: false, memoryProfile: 'medium');
+    $this->seeder->seedVote('Player1', 'server1');
+    $this->seeder->seedVote('Player2', 'server1');
+    $this->seeder->seedVote('Player3', 'server1');
+    $this->seeder->seedHeartbeat('Player1');
+    $this->seeder->seedHeartbeat('Player2');
+    $this->seeder->seedHeartbeat('Player3');
+
+    $this->voteManager->checkAndTrigger('server1');
+}
+
+public function testAutoStopNotTriggeredIfNoServerWaiting(): void
+{
+    $docker = $this->createMock(DockerClient::class);
+    $docker->expects($this->never())->method('stopContainer');
+
+    // server1 empty, grace expired, but no other server has votes
+    $this->seeder->seedServer('server1', running: true, players: 0);
+    // no votes seeded
+
+    $this->voteManager->triggerAutoStopIfNeeded('server1');
+}
+```
