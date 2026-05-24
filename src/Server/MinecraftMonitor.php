@@ -17,7 +17,7 @@ class MinecraftMonitor
 {
     private const PLAYER_JOIN_REGEX  = '/Player connected:\s+([^,]+),\s+xuid:\s*(\d+)/i';
     private const PLAYER_LEAVE_REGEX = '/Player disconnected:\s+([^,]+),\s+xuid:\s*(\d+)/i';
-    private const PACK_STACK_REGEX   = '/Pack Stack\s+-\s+\[\d+\]\s+.+\(id:\s*([a-f0-9\-]+),/i';
+    private const PACK_STACK_REGEX   = '/Pack Stack\s+-\s+\[\d+]\s+.+\(id:\s*([a-f0-9\-]+),/i';
 
     /** @var array<string, array> Known servers */
     private array $servers = [];

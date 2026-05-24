@@ -86,9 +86,13 @@ class RedisClient
 
     public function pushChatMessage(array $message): void
     {
-        $this->redis->rpush('chat', json_encode($message));
+        $encoded = json_encode($message);
+        if ($encoded === false) {
+            return;
+        }
+        $this->redis->rpush('chat', (array)$encoded);
         $this->redis->ltrim('chat', -self::CHAT_MAX, -1);
-    }
+}
 
     public function getChatHistory(): array
     {

@@ -394,7 +394,7 @@ function updateBlockingCallout(card, reason, detail) {
     if (voteSection) voteSection.before(div);
 }
 
-function reorderCards(updates) {
+function reorderCards() {
     const container = document.getElementById('server-cards');
     if (!container) return;
 
