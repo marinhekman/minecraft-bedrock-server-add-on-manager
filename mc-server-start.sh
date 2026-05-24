@@ -59,9 +59,9 @@ echo "  3) High   - 3.5GB  (heavy use, many players / lots of chunks)"
 echo "Enter choice (default: 2):"
 read -r MEM_CHOICE
 case "$MEM_CHOICE" in
-    1) MEMORY="2560m" ;;
-    3) MEMORY="3584m" ;;
-    *) MEMORY="3g" ;;
+    1) MEMORY="2560m" ; MEMORY_PROFILE="low"    ;;
+    3) MEMORY="3584m" ; MEMORY_PROFILE="high"   ;;
+    *) MEMORY="3g"    ; MEMORY_PROFILE="medium" ;;
 esac
 
 # ── Derive container name from folder ────────────────────────────────────────
@@ -72,38 +72,6 @@ else
 fi
 
 # ── Build docker run command ──────────────────────────────────────────────────
-CMD="docker run -d -it \
-  --name $CONTAINER_NAME \
-  -e EULA=TRUE \
-  -e ALLOW_CHEATS=true \
-  --restart=unless-stopped \
-  -e GAMEMODE=creative \
-  --memory=$MEMORY \
-  --memory-swap=$MEMORY \
-  -p $PORT:19132/udp \
-  -v $DATA_PATH:/data"
-
-if [ -n "$SEED" ]; then
-    CMD="$CMD \
-  -e LEVEL_SEED=\"$SEED\""
-fi
-
-CMD="$CMD \
-  itzg/minecraft-bedrock-server"
-
-# ── Confirm ───────────────────────────────────────────────────────────────────
-echo ""
-echo "About to run:"
-echo "$CMD"
-echo ""
-echo "Continue? (y/n)"
-read -r CONFIRM
-if [ "$CONFIRM" != "y" ]; then
-    echo "Aborted."
-    exit 0
-fi
-
-# ── Execute ───────────────────────────────────────────────────────────────────
 ARGS=(
     -d -it
     --name "$CONTAINER_NAME"
@@ -113,6 +81,7 @@ ARGS=(
     -e GAMEMODE=creative
     --memory="$MEMORY"
     --memory-swap="$MEMORY"
+    -e MEMORY_PROFILE="$MEMORY_PROFILE"
     -p "$PORT:19132/udp"
     -v "$DATA_PATH:/data"
 )
@@ -123,7 +92,19 @@ fi
 
 ARGS+=(itzg/minecraft-bedrock-server)
 
+# ── Confirm ───────────────────────────────────────────────────────────────────
+echo ""
+echo "About to run:"
+echo "docker run $(printf '%q ' "${ARGS[@]}")"
+echo ""
+echo "Continue? (y/n)"
+read -r CONFIRM
+if [ "$CONFIRM" != "y" ]; then
+    echo "Aborted."
+    exit 0
+fi
+
+# ── Execute ───────────────────────────────────────────────────────────────────
 docker run "${ARGS[@]}"
 echo ""
-echo "Server started in $DATA_PATH on port $PORT with memory limit $MEMORY."
-
+echo "Server started in $DATA_PATH on port $PORT with memory limit $MEMORY (profile: $MEMORY_PROFILE)."
