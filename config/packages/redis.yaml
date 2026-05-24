@@ -1,0 +1,5 @@
+services:
+    Predis\Client:
+        arguments:
+            - '%env(REDIS_URL)%'
+        public: true

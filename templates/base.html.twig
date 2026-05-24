@@ -3,19 +3,42 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}MC Add-on Manager{% endblock %}</title>
+    <title>{% block title %}{{ app_title|raw }}{% endblock %}</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 128 128%22><text y=%221.2em%22 font-size=%2296%22>🧱</text></svg>">
     {% block stylesheets %}
         {{ importmap('app') }}
     {% endblock %}
+    <style>
+        body {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        main {
+            flex: 1;
+        }
+    </style>
 </head>
 <body class="bg-light">
 
+    {% block navbar %}
     <nav class="navbar navbar-dark bg-dark mb-4">
-        <div class="container">
-            <span class="navbar-brand fw-bold">🧱 MC Add-on Manager</span>
+        <div class="container d-flex align-items-center justify-content-between">
+            <a href="{{ path('home') }}" class="navbar-brand fw-bold text-decoration-none">🧱 {{ app_title|raw }}</a>
+            {% if app.user %}
+                <div class="d-flex align-items-center gap-2">
+                    <img src="{{ app.user.avatarPath }}"
+                         alt="{{ app.user.gamertag }}"
+                         class="rounded-circle"
+                         style="width:32px;height:32px;object-fit:cover"
+                         title="{{ app.user.gamertag }}">
+                    <span class="text-white-50 small">{{ app.user.gamertag }}</span>
+                    <a href="{{ path('logout') }}" class="btn btn-sm btn-outline-light">Logout</a>
+                </div>
+            {% endif %}
         </div>
     </nav>
+    {% endblock %}
 
     <main class="container pb-5">
         {% for message in app.flashes('success') %}
@@ -40,9 +63,11 @@
         {% block body %}{% endblock %}
     </main>
 
+    {% block footer %}
     <footer class="bg-dark text-secondary text-center py-3 mt-4">
         <small>Minecraft Bedrock Add-on Manager</small>
     </footer>
+    {% endblock %}
 
 </body>
 </html>

@@ -1,0 +1,59 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Login — MC Server Manager{% endblock %}
+
+{% block body %}
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-4">
+
+            <div class="card shadow-sm">
+                <div class="card-header text-center">
+                    <h4 class="mb-0">🎮 MC Server Manager</h4>
+                </div>
+                <div class="card-body">
+
+                    {% if error %}
+                        <div class="alert alert-danger">
+                            {{ error.messageKey|trans(error.messageData, 'security') }}
+                        </div>
+                    {% endif %}
+
+                    <form method="post" action="{{ path('login') }}">
+                        <div class="mb-3">
+                            <label for="username" class="form-label">Username</label>
+                            <input type="text"
+                                   class="form-control"
+                                   id="username"
+                                   name="username"
+                                   value="{{ last_username }}"
+                                   autocomplete="username"
+                                   required
+                                   autofocus>
+                        </div>
+                        <div class="mb-3">
+                            <label for="password" class="form-label">Password</label>
+                            <input type="password"
+                                   class="form-control"
+                                   id="password"
+                                   name="password"
+                                   autocomplete="current-password"
+                                   required>
+                        </div>
+                        <input type="hidden" name="_csrf_token" value="{{ csrf_token('authenticate') }}">
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary">Login</button>
+                        </div>
+                    </form>
+
+                </div>
+            </div>
+
+            <div class="text-center mt-3">
+                <a href="{{ path('home') }}" class="text-muted small">← Back to homepage</a>
+            </div>
+
+        </div>
+    </div>
+</div>
+{% endblock %}

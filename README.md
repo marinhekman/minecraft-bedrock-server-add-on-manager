@@ -1,6 +1,6 @@
 # 🧱 Minecraft Bedrock Add-on Manager
 
-A web-based dashboard for managing add-ons (behaviour packs and resource packs) on your [itzg/minecraft-bedrock-server](https://github.com/itzg/docker-minecraft-bedrock-server) instances.
+A web-based dashboard for managing add-ons (behaviour packs and resource packs) on your [itzg/minecraft-bedrock-server](https://github.com/itzg/docker-minecraft-bedrock-server) instances, with a public-facing server status page and user authentication.
 
 ![PHP](https://img.shields.io/badge/PHP-8.4-blue)
 ![Symfony](https://img.shields.io/badge/Symfony-7.4-black)
@@ -10,20 +10,36 @@ A web-based dashboard for managing add-ons (behaviour packs and resource packs) 
 
 ## Features
 
+### Public homepage (`/`)
+- 🌐 Public server status page visible to anyone, no login required
+- 🖥️ Shows each server's display name, description and image (configured via `mc-server-manager/meta.yaml` inside the server data folder)
+- 🟢 Live running status, uptime and online player count per server
+- 📦 Lists enabled add-ons (name, type, version) per server
+- 👤 Shows logged-in user's Xbox gamertag and avatar with role badge (Admin / User / Anonymous)
+
+### Admin dashboard (`/admin`)
 - 📋 Overview of all user-installed add-ons per server with enabled/disabled status
 - ✅ Enable and disable add-ons with a single click
 - ⬆️ Install add-ons by uploading `.mcaddon` or `.mcpack` files directly from the browser
 - 🗑️ Remove add-ons with a confirmation dialog
 - 🔄 Restart your Minecraft server directly from the dashboard
-- 🟦 Live **Loaded** status per add-on — shows whether each pack was actually loaded by the server on its last boot, updated automatically every 10 seconds via the Docker logs API
-- 📊 Live **CPU%, memory usage and uptime** per server container, updated every 10 seconds
+- 🟦 Live **Loaded** status per add-on — shows whether each pack was actually loaded by the server on its last boot, detected via Docker log streaming
+- 📊 Live **CPU%, memory usage, uptime and player count** per server container, updated every 10 seconds
 - 🖥️ Host machine **memory usage bar** showing total/used/available RAM
-- 💻 **Send commands** to a running server directly from the dashboard, with a pre-configured command list loaded from a shared `mc-commands.txt` file on the host
-- 🐳 Automatic detection of running `itzg/minecraft-bedrock-server` containers via Docker API — no manual container name configuration needed
-- ⚠️ Dependency validation — warns when a pack has unmet UUID dependencies, with a clickable popover showing the missing UUIDs
-- ⚙️ Built-in system packs (vanilla, chemistry, experimental) are shown separately in a collapsed section, keeping the main view clean
+- 💻 **Send commands** to a running server directly from the dashboard, with a pre-configured command list from `commands.txt`
+- 🐳 Automatic container detection via Docker API — no manual container name configuration needed
+- ⚠️ Dependency validation — warns when a pack has unmet UUID dependencies
+- ⚙️ Built-in system packs shown separately in a collapsed section
 - 🔒 Version protection — prevents accidental downgrades when reinstalling a pack
+- 🔁 Resource pack loaded state inferred from matching behaviour pack name in logs
 
+### Authentication
+- 🔐 Username/password login with sessions stored in Redis (survives container restarts)
+- 👑 Role-based access: `ROLE_ADMIN` for the dashboard, `ROLE_USER` for the homepage
+- 🎮 Xbox gamertag and xuid linked per user account
+- 🖼️ User avatar displayed in navbar and homepage header
+- 📝 Users configured via `users.yaml` (mounted at runtime, not committed to git)
+- 🔑 Sessions persist for 30 days with automatic renewal on each visit
 
 ## Screenshot
 
@@ -67,67 +83,103 @@ APP_SECRET=your_random_secret_here
 
 # Use :80 for plain HTTP (recommended for local/LAN use)
 SERVER_NAME=:80
+
+# Site title — supports HTML entities, use &nbsp; instead of spaces
+APP_TITLE_RAW=MC&nbsp;SERVERS
+
+# Redis URL (used for sessions and live server state)
+REDIS_URL=redis://mc-redis:6379
+
+# Docker API URL (mc-docker-api container)
+DOCKER_API_URL=http://host.docker.internal:2375
 ```
 
-### 3. Run
+### 3. Set up runtime data
+
+Create the config folder and add your users:
 
 ```bash
-docker run -d \
-  --name mc-server-manager \
-  --restart unless-stopped \
-  --env-file .env \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  -v /proc/meminfo:/proc/meminfo:ro \
-  -v /home/user/mc-commands.txt:/mc-data/commands.txt:ro \
-  -v /home/user/minecraft-data:/mc-data/server1 \
-  -p 8080:80 \
-  minecraft-bedrock-server-add-on-manager
+mkdir -p ~/mc-server-manager-data/avatars
+cp users.yaml.example ~/mc-server-manager-data/users.yaml
 ```
 
-The `mc-commands.txt` file is optional. If present, its lines are shown as suggestions in the command input on the dashboard. Lines starting with `#` are treated as comments and ignored. Example:
+Edit `~/mc-server-manager-data/users.yaml`:
 
-```
-# Game rules
-gamerule keepInventory true
-gamerule keepInventory false
-gamerule doDaylightCycle false
-gamerule doDaylightCycle true
-gamerule doMobSpawning false
-gamerule doMobSpawning true
-
-# Time
-time set day
-time set night
-
-# Weather
-weather clear
-weather rain
-
-# Difficulty
-difficulty peaceful
-difficulty easy
-difficulty normal
-difficulty hard
+```yaml
+users:
+    yourname:
+        # Generate with: docker exec -it mc-server-manager php bin/console security:hash-password
+        password: '$2y$13$...'
+        gamertag: 'YourXboxGamertag'
+        xuid: '2535123456789'
+        roles: ['ROLE_ADMIN']
 ```
 
-To manage **multiple servers**, add a `-v` flag for each:
+Place user avatars (96×96px PNG) in `~/mc-server-manager-data/avatars/yourname.png`.
+
+A default avatar fallback is built into the image at `public/images/avatar_default.png`.
+
+### 4. Optionally configure per-server metadata
+
+Inside each `minecraft-data` folder, create:
+
+```
+minecraft-data/
+    mc-server-manager/
+        meta.yaml
+        image.png     ← 512×512px recommended
+```
+
+`meta.yaml` format:
+
+```yaml
+display_name: "My Creative World"
+description: "Our main survival world for the gang."
+```
+
+### 5. Run
+
+Use the provided start script which handles all containers and volume mounts:
 
 ```bash
-docker run -d \
-  --name mc-server-manager \
-  --restart unless-stopped \
-  --env-file .env \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  -v /proc/meminfo:/proc/meminfo:ro \
-  -v /home/user/minecraft-data:/mc-data/server1 \
-  -v /home/user/second-minecraft-data:/mc-data/server2 \
-  -p 8080:80 \
-  minecraft-bedrock-server-add-on-manager
+bash mc-server-manager-start.sh
 ```
 
-The name after `/mc-data/` (e.g. `server1`, `server2`) is used as the display label in the dashboard. The dashboard is available at [http://localhost:8080](http://localhost:8080).
+The script automatically:
+- Starts the `mc-docker-api` container (Docker API proxy)
+- Starts `mc-redis` for sessions and live state
+- Mounts `~/mc-server-manager-data` → `/mc-data/config`
+- Mounts `~/minecraft-data` → `/mc-data/server1`, `~/minecraft-data2` → `/mc-data/server2`, etc.
+- Mounts avatars folder to the public web directory
 
-If no `-v` mounts are provided for `/mc-data/`, the dashboard will show a message indicating no servers are configured.
+The dashboard is available at [http://localhost:8080](http://localhost:8080).
+
+### 6. Create user passwords
+
+```bash
+docker exec -it mc-server-manager php bin/console security:hash-password
+```
+
+## Folder structure on host
+
+```
+~/
+    mc-server-manager-data/
+        users.yaml              ← user accounts (not in git)
+        commands.txt            ← optional command suggestions
+        avatars/
+            yourname.png        ← user avatars (96×96px)
+    minecraft-data/             → mounted as server1
+        mc-server-manager/
+            meta.yaml           ← display name, description
+            image.png           ← server image (512×512px)
+        behavior_packs/
+        resource_packs/
+        worlds/
+        server.properties
+    minecraft-data2/            → mounted as server2
+        ...
+```
 
 ## How it works
 
@@ -137,12 +189,14 @@ The manager mounts each Minecraft server's `minecraft-data` folder and reads/wri
 - `resource_packs/*/manifest.json` — discovers installed resource packs
 - `worlds/Bedrock level/world_behavior_packs.json` — enables/disables behaviour packs
 - `worlds/Bedrock level/world_resource_packs.json` — enables/disables resource packs
+- `mc-server-manager/meta.yaml` — reads display name and description
+- `mc-server-manager/image.png` — reads server image
 
-It connects to the Docker socket to automatically match each mounted data folder to its running container, retrieve port and status information, send restart signals, and read container logs to determine which packs were actually loaded on the last server boot.
+It connects to the Docker API (via `mc-docker-api` container) to automatically match each mounted data folder to its running container, retrieve port and status information, send restart signals, and stream container logs in real time to determine which packs were loaded and how many players are online.
 
-User-installed packs are stored in folders prefixed with `user_` (e.g. `behavior_packs/user_MyPack_abc12345/`) so they can be reliably distinguished from built-in server packs.
+User-installed packs are stored in folders prefixed with `user_` so they can be reliably distinguished from built-in server packs.
 
-> **Note:** After enabling or disabling add-ons, the Minecraft server must be restarted for changes to take effect. Use the **Restart server** button on the dashboard.
+> **Note:** After enabling or disabling add-ons, the Minecraft server must be restarted for changes to take effect.
 
 ## Updating
 
@@ -150,14 +204,14 @@ User-installed packs are stored in folders prefixed with `user_` (e.g. `behavior
 git pull
 docker build --no-cache -t minecraft-bedrock-server-add-on-manager .
 docker stop mc-server-manager && docker rm mc-server-manager
-# Re-run the docker run command from step 3
+bash mc-server-manager-start.sh
 ```
 
 ## Security
 
-This tool is intended for use on a **trusted local network**. It has no authentication layer. Do not expose it directly to the internet.
+Access to `/admin` requires `ROLE_ADMIN`. The public homepage at `/` is accessible anonymously but shows read-only information only.
 
-The Docker socket is mounted to allow container discovery and restart signals. No containers are created or deleted by this application.
+The Docker API is accessed via the `mc-docker-api` sidecar container rather than a direct socket mount, reducing the attack surface. No containers are created or deleted by this application.
 
 ## License
 

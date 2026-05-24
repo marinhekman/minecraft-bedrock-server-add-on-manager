@@ -1,0 +1,12 @@
+users:
+    steve:
+        # Generate with: docker exec -it mc-server-manager php bin/console security:hash-password
+        password: '$2y$13$changeme'
+        gamertag: 'YourGamertag'
+        xuid: '2535123456789'
+        roles: ['ROLE_ADMIN']
+    alex:
+        password: '$2y$13$changeme'
+        gamertag: 'FriendGamertag'
+        xuid: '2535987654321'
+        roles: ['ROLE_USER']
