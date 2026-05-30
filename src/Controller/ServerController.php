@@ -50,6 +50,31 @@ class ServerController extends AbstractController
         return $this->redirectToRoute('dashboard');
     }
 
+    #[Route('/stop', name: 'server_stop', methods: ['POST'])]
+    public function stop(string $serverName): RedirectResponse
+    {
+        $server = $this->serverRegistry->get($serverName);
+
+        if ($server === null) {
+            $this->addFlash('error', sprintf('Server "%s" not found.', $serverName));
+            return $this->redirectToRoute('dashboard');
+        }
+
+        if ($server->containerId === null) {
+            $this->addFlash('error', sprintf('No container found for server "%s".', $serverName));
+            return $this->redirectToRoute('dashboard');
+        }
+
+        try {
+            $this->dockerClient->stopContainer($server->containerId);
+            $this->addFlash('success', sprintf('Server "%s" is stopping.', $server->containerName ?? $serverName));
+        } catch (\RuntimeException $e) {
+            $this->addFlash('error', sprintf('Failed to stop server: %s', $e->getMessage()));
+        }
+
+        return $this->redirectToRoute('dashboard');
+    }
+
     #[Route('/restart', name: 'server_restart', methods: ['POST'])]
     public function restart(string $serverName): RedirectResponse
     {
@@ -88,6 +113,10 @@ class ServerController extends AbstractController
             throw $this->createNotFoundException();
         }
 
-        return new \Symfony\Component\HttpFoundation\BinaryFileResponse($path);
+        return new \Symfony\Component\HttpFoundation\BinaryFileResponse(
+            $path,
+            200,
+            ['Content-Type' => 'image/png'],
+        );
     }
 }

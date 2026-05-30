@@ -1,9 +1,9 @@
-<?php /** @noinspection PhpUndefinedFieldInspection */
+<?php
 
 namespace App\Server;
 
 use App\Service\RedisClient;
-use App\Service\GlobalMetaReader;
+use App\Service\ResourceBudgetChecker;
 use App\Service\VoteManager;
 use Ratchet\ConnectionInterface;
 use Ratchet\MessageComponentInterface;
@@ -18,9 +18,9 @@ class WebSocketServer implements MessageComponentInterface
     private OutputInterface $output;
 
     public function __construct(
-        private readonly RedisClient    $redisClient,
-        private readonly VoteManager    $voteManager,
-        private readonly GlobalMetaReader $globalMetaReader,
+        private readonly RedisClient $redisClient,
+        private readonly VoteManager $voteManager,
+        private readonly ResourceBudgetChecker $budgetChecker,
     ) {
         $this->clients = new \SplObjectStorage();
         $this->output  = new NullOutput();
@@ -34,7 +34,7 @@ class WebSocketServer implements MessageComponentInterface
     public function onOpen(ConnectionInterface $conn): void
     {
         $this->clients->attach($conn);
-        $this->output->writeln('<info>WebSocket client connected: ' . $conn->resourceId . '</info>');
+        $this->output->writeln('<info>WebSocket client connected: ' . ($conn->resourceId ?? '?') . '</info>');
 
         $this->sendToConnection($conn, [
             'type'    => 'init',
@@ -60,7 +60,7 @@ class WebSocketServer implements MessageComponentInterface
     public function onClose(ConnectionInterface $conn): void
     {
         $this->clients->detach($conn);
-        $this->output->writeln('<info>WebSocket client disconnected: ' . $conn->resourceId . '</info>');
+        $this->output->writeln('<info>WebSocket client disconnected: ' . ($conn->resourceId ?? '?') . '</info>');
     }
 
     public function onError(ConnectionInterface $conn, \Exception $e): void
@@ -106,9 +106,10 @@ class WebSocketServer implements MessageComponentInterface
     private function handleHeartbeat(ConnectionInterface $from, array $data): void
     {
         $gamertag = $data['gamertag'] ?? null;
-        if ($gamertag) {
-            $this->redisClient->setHeartbeat($gamertag);
+        if (!$gamertag) {
+            return;
         }
+        $this->redisClient->setHeartbeat($gamertag);
     }
 
     private function broadcast(array $data): void
@@ -135,41 +136,55 @@ class WebSocketServer implements MessageComponentInterface
 
     private function buildSingleServerState(string $name): array
     {
-        $server = $this->redisClient->getServer($name);
+        $server    = $this->redisClient->getServer($name);
+        $countdown = $this->redisClient->getCountdown($name);
 
         return [
-            'server'      => $server,
-            'playerCount' => $this->redisClient->getPlayerCount($name),
-            'loadedUuids' => $this->redisClient->getLoadedUuids($name),
-            'stats'       => $this->redisClient->getStats($name),
-            'votes'       => [
-                'count'          => $this->voteManager->getActiveVoteCount($name),
-                'threshold'      => $this->voteManager->getThreshold($name),
-                'voters'         => $this->voteManager->getActiveVoters($name),
-                'cooldown'       => $this->redisClient->hasCooldown($name),
-                'blockingReason' => $this->voteManager->getBlockingReason($name),
-                'blockingDetail' => $this->voteManager->getBlockingDetail($name),
+            'server'        => $server,
+            'playerCount'   => $this->redisClient->getPlayerCount($name),
+            'loadedUuids'   => $this->redisClient->getLoadedUuids($name),
+            'stats'         => $this->redisClient->getStats($name),
+            'memoryProfile' => $server['memoryProfile'] ?? 'medium',
+            'votes'         => [
+                'count'   => $this->voteManager->getActiveVoteCount($name),
+                'voters'  => $this->voteManager->getActiveVoters($name),
             ],
-            'memoryProfile'      => $server['memoryProfile'] ?? 'medium',
-            'graceUntil'         => $this->resolveGraceUntil($name, $server),
+            'countdownUntil' => $countdown !== null
+                ? $countdown + RedisClient::COUNTDOWN_TTL
+                : null,
+            'blocked' => $this->getBlockingReason($name, $server),
         ];
     }
 
-    private function resolveGraceUntil(string $name, ?array $server): ?int
+    private function getBlockingReason(string $name, ?array $server): ?string
     {
-        if (!($server['running'] ?? false)) {
+        // Only relevant for stopped servers
+        if ($server['running'] ?? false) {
             return null;
         }
 
-        if ($this->redisClient->getPlayerCount($name) > 0) {
+        // No votes — no point showing a blocking message
+        if ($this->voteManager->getActiveVoteCount($name) === 0) {
             return null;
         }
 
-        $graceStartedAt = $this->redisClient->getServerEmpty($name);
-        if ($graceStartedAt === null) {
-            return null;
+        // Check players on any running server
+        foreach ($this->redisClient->getAllServerNames() as $otherName) {
+            if ($otherName === $name) {
+                continue;
+            }
+            $other = $this->redisClient->getServer($otherName);
+            if (($other['running'] ?? false) && $this->redisClient->getPlayerCount($otherName) > 0) {
+                return 'players';
+            }
         }
 
-        return $graceStartedAt + $this->globalMetaReader->read()->serverEmptyGrace;
+        // Check resource budget
+        $profile = $server['memoryProfile'] ?? 'medium';
+        if (!$this->budgetChecker->canStart($profile)) {
+            return 'resources';
+        }
+
+        return null;
     }
 }

@@ -13,9 +13,7 @@ final readonly class GlobalMeta
      */
     public function __construct(
         public array $resourceLimits,
-        public int   $voteThreshold,
-        public int   $voteCooldown,
-        public int   $serverEmptyGrace,
+        public int   $heartbeatTtl,
     ) {}
 
     /**
@@ -26,10 +24,8 @@ final readonly class GlobalMeta
     public static function fromArray(array $data): self
     {
         return new self(
-            resourceLimits:   self::parseResourceLimits($data['resource_limits'] ?? []),
-            voteThreshold:    (int) ($data['vote_threshold']    ?? 3),
-            voteCooldown:     (int) ($data['vote_cooldown']     ?? 300),
-            serverEmptyGrace: (int) ($data['server_empty_grace'] ?? 60),
+            resourceLimits: self::parseResourceLimits($data['resource_limits'] ?? []),
+            heartbeatTtl:   (int) ($data['heartbeat_ttl'] ?? 120),
         );
     }
 
@@ -77,4 +73,3 @@ final readonly class GlobalMeta
         return $limits;
     }
 }
-

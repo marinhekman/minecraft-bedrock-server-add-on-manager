@@ -76,8 +76,10 @@ docker run -d \
   --network mc-net \
   --restart unless-stopped \
   --env-file .env \
+  --add-host=host.docker.internal:host-gateway \
   "${VOLUMES[@]}" \
   -p 8080:80 \
+  -p 8082:8082 \
   minecraft-bedrock-server-add-on-manager
 
 echo ""

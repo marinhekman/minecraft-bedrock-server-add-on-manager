@@ -1,6 +1,10 @@
 twig:
     globals:
         app_title: '%env(APP_TITLE_RAW)%'
+        ws_scheme: '%env(URL_WS_SERVER_SCHEME)%'
+        ws_host:   '%env(URL_WEB_SERVER_HOST)%'
+        ws_port:   '%env(URL_WS_SERVER_PORT)%'
+        ws_uri:    '%env(URL_WS_SERVER_URI)%'
     file_name_pattern: '*.twig'
 
 when@test:

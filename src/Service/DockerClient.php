@@ -42,6 +42,11 @@ class DockerClient
         $this->request('POST', sprintf('/containers/%s/restart', $id));
     }
 
+    public function stopContainer(string $id): void
+    {
+        $this->request('POST', sprintf('/containers/%s/stop', $id));
+    }
+
     public function sendCommand(string $containerId, string $command): void
     {
         $exec = $this->request('POST', sprintf('/containers/%s/exec', $containerId), [], [
@@ -61,23 +66,22 @@ class DockerClient
 
     public function getContainerStats(string $containerId): array
     {
-        $url = $this->baseUrl() . sprintf('/containers/%s/stats?stream=false', $containerId);
+        $url  = $this->baseUrl() . sprintf('/containers/%s/stats?stream=false', $containerId);
+        $raw  = $this->curl('GET', $url);
+        $data = json_decode($raw, true);
 
-        $raw      = $this->curl('GET', $url);
-        $data     = json_decode($raw, true);
-
-        $cpuDelta    = $data['cpu_stats']['cpu_usage']['total_usage']
-                     - $data['precpu_stats']['cpu_usage']['total_usage'];
-        $systemDelta = $data['cpu_stats']['system_cpu_usage']
-                     - $data['precpu_stats']['system_cpu_usage'];
+        $cpuDelta    = ($data['cpu_stats']['cpu_usage']['total_usage'] ?? 0)
+                     - ($data['precpu_stats']['cpu_usage']['total_usage'] ?? 0);
+        $systemDelta = ($data['cpu_stats']['system_cpu_usage'] ?? 0)
+                     - ($data['precpu_stats']['system_cpu_usage'] ?? 0);
         $numCpus     = $data['cpu_stats']['online_cpus'] ?? 1;
         $cpuPercent  = $systemDelta > 0
             ? round(($cpuDelta / $systemDelta) * $numCpus * 100, 1)
             : 0.0;
 
-        $memUsage   = $data['memory_stats']['usage']
+        $memUsage   = ($data['memory_stats']['usage'] ?? 0)
                     - ($data['memory_stats']['stats']['cache'] ?? 0);
-        $memLimit   = $data['memory_stats']['limit'];
+        $memLimit   = $data['memory_stats']['limit'] ?? 0;
         $memPercent = $memLimit > 0 ? round($memUsage / $memLimit * 100, 1) : 0.0;
 
         return [
@@ -118,6 +122,26 @@ class DockerClient
         return null;
     }
 
+    /**
+     * Extracts the MEMORY_PROFILE env var from inspect data.
+     * Returns 'medium' if the variable is absent.
+     *
+     * @param array $inspectData Return value of inspectContainer()
+     */
+    public function getMemoryProfile(array $inspectData): string
+    {
+        foreach ($inspectData['Config']['Env'] ?? [] as $env) {
+            if (str_starts_with($env, 'MEMORY_PROFILE=')) {
+                $value = substr($env, strlen('MEMORY_PROFILE='));
+                if (in_array($value, ['low', 'medium', 'high'], true)) {
+                    return $value;
+                }
+            }
+        }
+
+        return 'medium';
+    }
+
     private function getSelfContainerId(): ?string
     {
         $hostname = gethostname();
@@ -137,9 +161,6 @@ class DockerClient
         return rtrim($this->dockerApiUrl, '/') . '/' . self::API_VERSION;
     }
 
-    /**
-     * General JSON request — returns decoded array or null.
-     */
     private function request(string $method, string $path, array $query = [], array $body = []): ?array
     {
         $url = $this->baseUrl() . $path;
@@ -153,9 +174,6 @@ class DockerClient
         return $raw !== '' ? json_decode($raw, true) : null;
     }
 
-    /**
-     * Low-level curl call over plain HTTP (no Unix socket).
-     */
     private function curl(string $method, string $url, array $body = [], array $extraHeaders = []): string
     {
         $ch = curl_init();
@@ -166,7 +184,7 @@ class DockerClient
         $headers = $extraHeaders;
 
         if (!empty($body)) {
-            $json    = json_encode($body);
+            $json      = json_encode($body);
             $headers[] = 'Content-Type: application/json';
             curl_setopt($ch, CURLOPT_POSTFIELDS, $json);
         } elseif ($method === 'POST') {
@@ -193,30 +211,5 @@ class DockerClient
         }
 
         return $raw ?: '';
-    }
-
-    public function stopContainer(string $id): void
-    {
-        $this->request('POST', sprintf('/containers/%s/stop', $id));
-    }
-
-    /**
-     * Extracts the MEMORY_PROFILE env var from inspect data.
-     * Returns 'medium' if the variable is absent.
-     *
-     * @param array $inspectData Return value of inspectContainer()
-     */
-    public function getMemoryProfile(array $inspectData): string
-    {
-        foreach ($inspectData['Config']['Env'] ?? [] as $env) {
-            if (str_starts_with($env, 'MEMORY_PROFILE=')) {
-                $value = substr($env, strlen('MEMORY_PROFILE='));
-                if (in_array($value, ['low', 'medium', 'high'], true)) {
-                    return $value;
-                }
-            }
-        }
-
-        return 'medium';
     }
 }

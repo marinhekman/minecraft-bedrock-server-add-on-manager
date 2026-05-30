@@ -8,7 +8,7 @@
 # servers plus the candidate fit within at least one combination.
 #
 # Memory profiles are declared per-server container via -e MEMORY_PROFILE=low|medium|high
-# in mc-server-start.sh. Default if absent: medium.
+# in mc-server-manager-start.sh. Default if absent: medium.
 #
 # Examples with the config below:
 #   Nothing running       + start high   → ✅ fits [high: 1, low: 1]
@@ -23,15 +23,9 @@ resource_limits:
       low: 1
     - medium: 2
 
-# Votes required to automatically start a stopped server.
-# Active = voter has sent a heartbeat within the last 120 seconds.
-# Override per server in mc-server-manager/meta.yaml inside the server data folder.
-vote_threshold: 3
-
-# Seconds before another auto-start is allowed after a server starts.
-vote_cooldown: 300
-
-# Seconds an empty server stays running after the last player leaves.
-# Shows a countdown on the server card during this window.
-server_empty_grace: 60
-
+# Seconds a user's vote stays active after they close the browser.
+# The client sends a heartbeat every 30 seconds while the page is open.
+# If no heartbeat is received within this window, the vote stops counting
+# toward the displayed total (but is remembered if the user returns).
+# Default: 120 seconds (2 minutes).
+heartbeat_ttl: 120

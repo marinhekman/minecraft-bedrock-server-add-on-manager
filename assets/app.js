@@ -97,7 +97,7 @@ function initCommandForms() {
 document.addEventListener('DOMContentLoaded', () => { loadCommands(); initCommandForms(); });
 document.addEventListener('turbo:load', () => { loadCommands(); initCommandForms(); });
 
-// ── Uptime formatter ──────────────────────────────────────────────────────────
+// ── Uptime ticker ─────────────────────────────────────────────────────────────
 
 function formatUptime(startedAt) {
     if (!startedAt) return '–';
@@ -112,9 +112,9 @@ function formatUptime(startedAt) {
 
 function startUptimeTicker() {
     setInterval(() => {
-        document.querySelectorAll('.card[data-status-url]').forEach(card => {
+        document.querySelectorAll('.card[data-server]').forEach(card => {
             const startedAt = card.dataset.lastStartedAt;
-            const badge = card.querySelector('.stat-uptime');
+            const badge     = card.querySelector('.stat-uptime');
             if (badge && startedAt) {
                 badge.textContent = `UP ${formatUptime(parseInt(startedAt))}`;
             }
@@ -125,280 +125,208 @@ function startUptimeTicker() {
 document.addEventListener('DOMContentLoaded', startUptimeTicker);
 document.addEventListener('turbo:load', startUptimeTicker);
 
-// ── Status polling ────────────────────────────────────────────────────────────
+// ── Countdown ticker ──────────────────────────────────────────────────────────
 
-function updateStatusBadges(card, loadedUuids) {
-    card.querySelectorAll('tr[data-uuid]').forEach(row => {
-        const uuid  = row.dataset.uuid;
-        const badge = row.querySelector('.status-badge');
-        if (!badge) return;
-        if (badge.classList.contains('bg-secondary')) return;
-        if (loadedUuids.includes(uuid)) {
-            badge.className = 'badge bg-info status-badge';
-            badge.textContent = '✅ Loaded';
-        } else {
-            badge.className = 'badge bg-success status-badge';
-            badge.textContent = 'Enabled';
-        }
-    });
-}
+function startCountdownTicker() {
+    setInterval(() => {
+        document.querySelectorAll('.countdown-block').forEach(block => {
+            const until     = parseInt(block.dataset.countdownUntil);
+            const remaining = Math.max(0, until - Math.floor(Date.now() / 1000));
+            const ttl       = window.countdownTtl || 15;
 
-function allEnabledAreLoaded(card, loadedUuids) {
-    let result = true;
-    card.querySelectorAll('tr[data-uuid]').forEach(row => {
-        const badge = row.querySelector('.status-badge');
-        if (!badge || badge.classList.contains('bg-secondary')) return;
-        if (!loadedUuids.includes(row.dataset.uuid)) result = false;
-    });
-    return result;
-}
+            const secsEl     = block.querySelector('.countdown-seconds');
+            const progressEl = block.querySelector('.countdown-progress');
 
-function resetToEnabled(card) {
-    card.querySelectorAll('tr[data-uuid] .status-badge').forEach(badge => {
-        if (badge.classList.contains('bg-secondary')) return;
-        badge.className = 'badge bg-success status-badge';
-        badge.textContent = 'Enabled';
-    });
-}
+            if (secsEl) secsEl.textContent = remaining;
+            if (progressEl) progressEl.style.width = ((remaining / ttl) * 100) + '%';
 
-function pollStatus(card) {
-    const url = card.dataset.statusUrl;
-    if (!url) return;
-
-    fetch(url)
-        .then(r => r.json())
-        .then(data => {
-            const loadedUuids = data.loadedUuids || [];
-            const startedAt   = String(data.startedAt);
-
-            // Detect restart
-            if (card.dataset.lastStartedAt && card.dataset.lastStartedAt !== startedAt) {
-                resetToEnabled(card);
-                card.dataset.pollDone = 'false';
-            }
-            card.dataset.lastStartedAt = startedAt;
-
-            // Update stats badges
-            const cpuBadge = card.querySelector('.stat-cpu');
-            const memBadge = card.querySelector('.stat-mem');
-            if (cpuBadge && memBadge) {
-                if (data.stats) {
-                    cpuBadge.textContent = `CPU ${data.stats.cpu}%`;
-                    memBadge.textContent = `MEM ${data.stats.memUsageMb}MB / ${data.stats.memLimitMb}MB (${data.stats.memPercent}%)`;
-                } else {
-                    cpuBadge.textContent = 'CPU –';
-                    memBadge.textContent = 'MEM –';
-                }
-            }
-            const playersBadge = card.querySelector('.stat-players');
-            if (playersBadge) {
-                playersBadge.textContent = `👥 ${data.playerCount ?? 0}`;
-            }
-
-            if (!data.running || loadedUuids.length === 0) {
-                card.dataset.pollDone = 'false';
-                return;
-            }
-
-            updateStatusBadges(card, loadedUuids);
-
-            if (allEnabledAreLoaded(card, loadedUuids)) {
-                card.dataset.pollDone = 'true';
-            }
-        })
-        .catch(() => {
-            card.dataset.pollDone = 'false';
+            if (remaining === 0) block.remove();
         });
+    }, 1000);
 }
 
-let pollingInterval = null;
+document.addEventListener('DOMContentLoaded', startCountdownTicker);
+document.addEventListener('turbo:load', startCountdownTicker);
 
-function initPolling() {
-    const cards = document.querySelectorAll('.card[data-status-url]');
-    if (cards.length === 0) return;
-
-    if (pollingInterval) {
-        clearInterval(pollingInterval);
-        pollingInterval = null;
-    }
-
-    cards.forEach(pollStatus);
-
-    pollingInterval = setInterval(() => {
-        cards.forEach(card => {
-            if (card.dataset.pollDone !== 'true') {
-                pollStatus(card);
-            }
-        });
-    }, 10000);
-}
-
-document.addEventListener('DOMContentLoaded', initPolling);
-document.addEventListener('turbo:load', initPolling);
-
-// ── Grace period countdown ────────────────────────────────────────────────────
-
-function updateGraceCountdowns() {
-    document.querySelectorAll('.grace-countdown-block').forEach(block => {
-        const graceUntil = parseInt(block.dataset.graceUntil);
-        if (!graceUntil) return;
-
-        const now       = Math.floor(Date.now() / 1000);
-        const remaining = graceUntil - now;
-
-        const secsEl    = block.querySelector('.grace-seconds');
-        const progressEl = block.querySelector('.grace-progress');
-
-        if (remaining <= 0) {
-            block.style.display = 'none';
-            return;
-        }
-
-        if (secsEl) secsEl.textContent = remaining;
-
-        // We don't know total grace duration from JS, so infer from data attr on card
-        const card      = block.closest('.card');
-        const totalGrace = card ? parseInt(card.dataset.totalGrace || 60) : 60;
-        const pct       = Math.max(0, Math.min(100, (remaining / totalGrace) * 100));
-        if (progressEl) progressEl.style.width = pct + '%';
-    });
-}
-
-function initGraceCountdowns() {
-    if (document.querySelector('.grace-countdown-block')) {
-        setInterval(updateGraceCountdowns, 1000);
-        updateGraceCountdowns();
-    }
-}
-
-document.addEventListener('DOMContentLoaded', initGraceCountdowns);
-document.addEventListener('turbo:load', initGraceCountdowns);
-
-// ── WebSocket — vote state + server updates ───────────────────────────────────
+// ── WebSocket — all live updates ──────────────────────────────────────────────
 
 function applyServerUpdate(serverName, data) {
-    const card = document.querySelector(`.card[data-server="${serverName}"]`);
-    if (!card) return;
+    console.log(`[WS] applyServerUpdate: ${serverName}`, data);
 
-    const votes = data.votes;
-    if (!votes) return;
+    const card = document.querySelector(`.card[data-server="${serverName}"]`);
+    if (!card) {
+        console.warn(`[WS] No card found for server: ${serverName}`);
+        return;
+    }
+
+    const votes      = data.votes;
+    const serverData = data.server;
+    const isRunning  = serverData && serverData.running;
+
+    if (!votes) {
+        console.warn(`[WS] No votes data for server: ${serverName}`);
+        return;
+    }
+
+    // Update running/stopped badge
+    if (serverData) {
+        const runningBadge = card.querySelector('.card-header .badge.bg-success, .card-header .badge.bg-danger');
+        if (runningBadge) {
+            if (isRunning) {
+                runningBadge.className   = 'badge bg-success';
+                runningBadge.textContent = '● Running';
+            } else {
+                runningBadge.className   = 'badge bg-danger';
+                runningBadge.textContent = '● Stopped';
+            }
+        }
+
+        const uptimeBadge  = card.querySelector('.stat-uptime');
+        const playersBadge = card.querySelector('.stat-players');
+        if (uptimeBadge)  uptimeBadge.style.display  = isRunning ? '' : 'none';
+        if (playersBadge) playersBadge.style.display = isRunning ? '' : 'none';
+
+        if (serverData.startedAt) {
+            card.dataset.lastStartedAt = serverData.startedAt;
+        }
+    }
+
+    // Update CPU / memory stats
+    const cpuBadge = card.querySelector('.stat-cpu');
+    const memBadge = card.querySelector('.stat-mem');
+    if (cpuBadge && memBadge) {
+        if (data.stats) {
+            cpuBadge.textContent = `CPU ${data.stats.cpu}%`;
+            memBadge.textContent = `MEM ${data.stats.memUsageMb}MB / ${data.stats.memLimitMb}MB (${data.stats.memPercent}%)`;
+        } else {
+            cpuBadge.textContent = 'CPU –';
+            memBadge.textContent = 'MEM –';
+        }
+    }
+
+    // Update player count
+    const playersBadge = card.querySelector('.stat-players');
+    if (playersBadge) {
+        playersBadge.textContent = `👥 ${data.playerCount ?? 0}`;
+    }
 
     // Update vote count text
     const countText = card.querySelector('.vote-count-text');
     if (countText) {
-        countText.textContent = `${votes.count} / ${votes.threshold} votes`;
+        const n = votes.count;
+        countText.textContent = `${n} vote${n !== 1 ? 's' : ''}`;
     }
 
     // Update voter avatars
     const avatarContainer = card.querySelector('.vote-avatars');
     if (avatarContainer) {
         avatarContainer.innerHTML = '';
-        const displayVoters = votes.voters.slice(0, 5);
-        displayVoters.forEach((voter, i) => {
-            const img = document.createElement('img');
-            img.src   = voter.avatarPath;
-            img.alt   = voter.gamertag;
-            img.title = voter.gamertag;
+        votes.voters.slice(0, 5).forEach((voter, i) => {
+            const img     = document.createElement('img');
+            img.src       = voter.avatarPath;
+            img.alt       = voter.gamertag;
+            img.title     = voter.gamertag;
             img.className = 'rounded-circle border border-white';
             img.style.cssText = `width:32px;height:32px;object-fit:cover;margin-left:${i === 0 ? '0' : '-8px'}`;
             avatarContainer.appendChild(img);
         });
         if (votes.voters.length > 5) {
-            const more = document.createElement('span');
+            const more       = document.createElement('span');
             more.className   = 'badge bg-secondary ms-1 align-self-center';
-            more.textContent = `+${votes.voters.length - 5} more`;
+            more.textContent = `+${votes.voters.length - 5}`;
             avatarContainer.appendChild(more);
         }
     }
 
-    // Update vote button
-    const voteSection = card.querySelector('.vote-section');
-    if (voteSection) {
-        const btnContainer = voteSection.querySelector('.d-flex.align-items-center.justify-content-between > :last-child');
-        const serverData   = data.server;
-        const isRunning    = serverData && serverData.running;
+    // Update blocking message
+    const blocked      = data.blocked ?? null;
+    let blockingBlock  = card.querySelector('.blocking-block');
+    const voteSection  = card.querySelector('.vote-section');
+
+    if (blocked && !isRunning && votes.count > 0) {
+        const messages = {
+            players:   '👥 Another server has players online. This server will start automatically once they leave.',
+            resources: '⚠️ Not enough resources to start this server right now. Waiting for a running server to stop.',
+        };
+        const alertClass = blocked === 'resources' ? 'alert-warning' : 'alert-info';
+        const html = `<div class="alert ${alertClass} py-2 mb-3 blocking-block">${messages[blocked] ?? 'Cannot start right now.'}</div>`;
+
+        if (blockingBlock) {
+            blockingBlock.outerHTML = html;
+        } else if (voteSection) {
+            voteSection.insertAdjacentHTML('beforebegin', html);
+        }
+    } else if (blockingBlock) {
+        blockingBlock.remove();
+    }
+
+    // Update countdown block
+    const countdownUntil = data.countdownUntil ?? null;
+    let countdownBlock   = card.querySelector('.countdown-block');
+
+    if (countdownUntil && !isRunning) {
+        if (!countdownBlock) {
+            const block = document.createElement('div');
+            block.className = 'alert alert-success py-2 mb-3 countdown-block';
+            block.dataset.countdownUntil = countdownUntil;
+            block.innerHTML = `
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span>🚀 <strong>Starting in <span class="countdown-seconds">–</span>s</strong></span>
+                    <small class="text-muted">Retract your vote to cancel</small>
+                </div>
+                <div class="progress" style="height:6px">
+                    <div class="progress-bar bg-success countdown-progress" role="progressbar" style="width:100%"></div>
+                </div>`;
+            if (voteSection) voteSection.before(block);
+        } else {
+            countdownBlock.dataset.countdownUntil = countdownUntil;
+        }
+    } else if (countdownBlock) {
+        countdownBlock.remove();
+    }
+
+    // Update pack loaded status badges (dashboard)
+    if (data.loadedUuids) {
+        card.querySelectorAll('tr[data-uuid]').forEach(row => {
+            const badge = row.querySelector('.status-badge');
+            if (!badge || badge.classList.contains('bg-secondary')) return;
+            if (data.loadedUuids.includes(row.dataset.uuid)) {
+                badge.className   = 'badge bg-info status-badge';
+                badge.textContent = '✅ Loaded';
+            } else {
+                badge.className   = 'badge bg-success status-badge';
+                badge.textContent = 'Enabled';
+            }
+        });
+    }
+
+    // Update vote action (right side)
+    const voteAction = card.querySelector('.vote-action');
+    if (voteAction) {
         const myGamertag   = window.myGamertag;
         const userHasVoted = myGamertag && votes.voters.some(v => v.gamertag === myGamertag);
+        const csrfToken    = card.dataset.csrfToken ?? '';
 
-        if (isRunning) {
-            if (btnContainer) btnContainer.outerHTML = `<span class="text-success small">Server is running ✅</span>`;
-        } else if (votes.cooldown) {
-            if (btnContainer) btnContainer.outerHTML = `<button class="btn btn-sm btn-secondary" disabled>⏳ Starting soon...</button>`;
-        } else if (myGamertag) {
-            const label = userHasVoted
-                ? '✓ Voted — click to retract'
-                : 'Vote to start';
+        if (myGamertag) {
+            const label    = userHasVoted ? '✓ Voted — click to retract' : 'Vote to start';
             const btnClass = userHasVoted ? 'btn-success' : 'btn-outline-primary';
-            if (btnContainer) btnContainer.outerHTML = `
-                <form method="post" action="/server/${serverName}/vote" class="vote-form">
-                    <button type="submit" class="btn btn-sm ${btnClass}">${label}</button>
-                </form>`;
-        }
-    }
-
-    // Update grace countdown block
-    card.dataset.graceUntil = data.graceUntil ?? '';
-    const graceBlock = card.querySelector('.grace-countdown-block');
-    if (data.graceUntil) {
-        if (!graceBlock) {
-            // Grace started — inject the block before vote section
-            const voteSection = card.querySelector('.vote-section');
-            if (voteSection) {
-                const block = document.createElement('div');
-                block.className = 'alert alert-info py-2 grace-countdown-block';
-                block.dataset.graceUntil = data.graceUntil;
-                block.innerHTML = `
-                    <div class="d-flex justify-content-between align-items-center mb-1">
-                        <span>⏱ <strong>Server stopping in <span class="grace-seconds">–</span>s</strong></span>
-                        <small class="text-muted">Waiting for players to reconnect...</small>
-                    </div>
-                    <div class="progress" style="height:6px">
-                        <div class="progress-bar bg-info grace-progress" role="progressbar" style="width:100%"></div>
-                    </div>`;
-                voteSection.before(block);
-                updateGraceCountdowns();
-            }
+            voteAction.innerHTML = `<form method="post" action="/server/${serverName}/vote" class="vote-form">
+                <input type="hidden" name="_token" value="${csrfToken}">
+                <button type="submit" class="btn btn-sm ${btnClass}">${label}</button>
+            </form>`;
         } else {
-            graceBlock.dataset.graceUntil = data.graceUntil;
-            graceBlock.style.display = '';
+            voteAction.innerHTML = `<span class="text-muted small">Log in to vote</span>`;
         }
-    } else if (graceBlock) {
-        graceBlock.remove();
     }
 
-    // Update blocking callout
-    updateBlockingCallout(card, votes.blockingReason, votes.blockingDetail);
-}
-
-function updateBlockingCallout(card, reason, detail) {
-    // Remove existing callout
-    const existing = card.querySelector('.blocking-callout');
-    if (existing) existing.remove();
-
-    if (!reason) return;
-
-    const alertClass = reason === 'resources' ? 'alert-warning' : 'alert-info';
-    const icons      = { players: '⏳', grace: '⏳', resources: '⚠️' };
-    const titles     = {
-        players:   'Waiting for players to leave',
-        grace:     'Waiting for server to stop',
-        resources: 'Insufficient resources',
-    };
-
-    const div = document.createElement('div');
-    div.className = `alert ${alertClass} py-2 mb-3 blocking-callout`;
-    div.innerHTML = `${icons[reason]} <strong>${titles[reason]}</strong><br><small>${detail}</small>`;
-
-    // Insert before vote section
-    const voteSection = card.querySelector('.vote-section');
-    if (voteSection) voteSection.before(div);
+    // Update vote count on card for reordering
+    card.dataset.voteCount = votes.count;
 }
 
 function reorderCards() {
     const container = document.getElementById('server-cards');
     if (!container) return;
 
-    // Build vote count map from WS data or fall back to data attr
     const cards = Array.from(container.querySelectorAll('.card[data-server]'));
 
     cards.sort((a, b) => {
@@ -408,64 +336,78 @@ function reorderCards() {
         return (a.dataset.server || '').localeCompare(b.dataset.server || '');
     });
 
-    // Re-append in sorted order and update medals
-    const medals = ['👑', '🥈', '🥉'];
+    const medals       = ['👑', '🥈', '🥉'];
     const medalClasses = ['text-warning fw-bold', 'text-secondary fw-bold', 'text-danger fw-bold'];
+    const bgClasses    = ['card-gold', 'card-silver', 'card-bronze'];
 
     cards.forEach((card, i) => {
         container.appendChild(card);
+
         const medalEl = card.querySelector('.card-header span[title^="Position"]');
         if (medalEl) {
             medalEl.textContent = i < 3 ? medals[i] : `#${i + 1}`;
             medalEl.className   = i < 3 ? medalClasses[i] : 'text-muted';
             medalEl.title       = `Position #${i + 1}`;
         }
+
+        card.classList.remove('card-gold', 'card-silver', 'card-bronze');
+        if (i < 3) card.classList.add(bgClasses[i]);
     });
 }
 
 function initWebSocket() {
-    const host = window.location.hostname;
-    const ws   = new WebSocket(`ws://${host}:8082`);
+    const wsUrl = window.wsUrl || 'ws://host.docker.internal:8082';
+    console.log(`[WS] Connecting to: ${wsUrl}`);
+
+    const ws = new WebSocket(wsUrl);
+
+    ws.addEventListener('open', () => {
+        console.log('[WS] Connection opened');
+        if (window.myGamertag) {
+            console.log(`[WS] Sending initial heartbeat for: ${window.myGamertag}`);
+            ws.send(JSON.stringify({ type: 'heartbeat', gamertag: window.myGamertag }));
+        }
+    });
 
     ws.addEventListener('message', e => {
         const msg = JSON.parse(e.data);
+        console.log(`[WS] Message received: type=${msg.type}`, msg);
 
         if (msg.type === 'init') {
-            // Apply initial state to all cards
+            console.log('[WS] Processing init, servers:', Object.keys(msg.servers || {}));
             Object.entries(msg.servers || {}).forEach(([name, data]) => {
                 applyServerUpdate(name, data);
-                const card = document.querySelector(`.card[data-server="${name}"]`);
-                if (card && data.votes) {
-                    card.dataset.voteCount = data.votes.count;
-                }
             });
             reorderCards();
         }
 
         if (msg.type === 'server_update') {
-            const card = document.querySelector(`.card[data-server="${msg.server}"]`);
-            if (card && msg.data.votes) {
-                card.dataset.voteCount = msg.data.votes.count;
-            }
+            console.log(`[WS] Processing server_update for: ${msg.server}`);
             applyServerUpdate(msg.server, msg.data);
             reorderCards();
         }
     });
 
-    ws.addEventListener('close', () => {
-        // Reconnect after 3 seconds
+    ws.addEventListener('error', e => {
+        console.error('[WS] Connection error:', e);
+    });
+
+    ws.addEventListener('close', e => {
+        console.warn(`[WS] Connection closed (code=${e.code}), reconnecting in 3s...`);
         setTimeout(initWebSocket, 3000);
     });
 
-    // Send heartbeat every 30s if logged in
     if (window.myGamertag) {
         setInterval(() => {
             if (ws.readyState === WebSocket.OPEN) {
+                console.log(`[WS] Sending heartbeat for: ${window.myGamertag}`);
                 ws.send(JSON.stringify({ type: 'heartbeat', gamertag: window.myGamertag }));
             }
         }, 30000);
     }
 }
 
-document.addEventListener('DOMContentLoaded', initWebSocket);
-document.addEventListener('turbo:load', initWebSocket);
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('[APP] DOMContentLoaded — myGamertag:', window.myGamertag, '— wsUrl:', window.wsUrl);
+    initWebSocket();
+});

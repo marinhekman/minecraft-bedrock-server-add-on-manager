@@ -27,12 +27,10 @@ class ServerMetaReader
         }
 
         return new ServerMeta(
-            displayName:   $data['display_name']   ?? null,
-            description:   $data['description']    ?? null,
-            imagePath:     file_exists($image) ? $image : null,
-            voteThreshold: isset($data['vote_threshold'])  ? (int) $data['vote_threshold']  : null,
-            voteCooldown:  isset($data['vote_cooldown'])   ? (int) $data['vote_cooldown']    : null,
+            displayName:  $data['display_name']  ?? null,
+            description:  $data['description']   ?? null,
+            imagePath:    file_exists($image) ? $image : null,
+            heartbeatTtl: isset($data['heartbeat_ttl']) ? (int) $data['heartbeat_ttl'] : null,
         );
     }
 }
-

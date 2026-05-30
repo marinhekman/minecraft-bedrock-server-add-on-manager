@@ -36,25 +36,19 @@ class ServerStatusController extends AbstractController
         $voters = $this->voteManager->getActiveVoters($serverName);
 
         return $this->json([
-            'running'       => $server->isRunning(),
-            'startedAt'     => $server->startedAt,
-            'loadedUuids'   => $this->redisClient->getLoadedUuids($serverName),
-            'playerCount'   => $this->redisClient->getPlayerCount($serverName),
-            'stats'         => $this->redisClient->getStats($serverName),
-            'memoryProfile' => $server->memoryProfile,
-            'graceUntil'    => $this->voteManager->getGraceUntil($serverName),
-            'votes'         => [
-                'count'          => $this->voteManager->getActiveVoteCount($serverName),
-                'threshold'      => $this->voteManager->getThreshold($serverName),
-                'voters'         => $voters,
-                'userHasVoted'   => $myGamertag !== null && in_array(
+            'running'     => $server->isRunning(),
+            'startedAt'   => $server->startedAt,
+            'loadedUuids' => $this->redisClient->getLoadedUuids($serverName),
+            'playerCount' => $this->redisClient->getPlayerCount($serverName),
+            'stats'       => $this->redisClient->getStats($serverName),
+            'votes'       => [
+                'count'        => $this->voteManager->getActiveVoteCount($serverName),
+                'voters'       => $voters,
+                'userHasVoted' => $myGamertag !== null && in_array(
                     $myGamertag,
                     array_column($voters, 'gamertag'),
                     true,
                 ),
-                'cooldown'       => $this->voteManager->getCooldown($serverName),
-                'blockingReason' => $this->voteManager->getBlockingReason($serverName),
-                'blockingDetail' => $this->voteManager->getBlockingDetail($serverName),
             ],
         ]);
     }

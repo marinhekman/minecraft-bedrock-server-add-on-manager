@@ -3,6 +3,8 @@
 namespace App\Controller;
 
 use App\Service\AddonScanner;
+use App\Service\RedisClient;
+use App\Service\ResourceBudgetChecker;
 use App\Service\ServerMetaReader;
 use App\Service\ServerRegistry;
 use App\Service\VoteManager;
@@ -17,21 +19,25 @@ class HomeController extends AbstractController
         private readonly AddonScanner     $addonScanner,
         private readonly ServerMetaReader $serverMetaReader,
         private readonly VoteManager      $voteManager,
+        private readonly RedisClient      $redis,
+        private readonly ResourceBudgetChecker $budgetChecker
     ) {}
 
     #[Route('/', name: 'home')]
     public function index(): Response
     {
-        $servers  = $this->serverRegistry->getAll();
-        $ranking  = $this->voteManager->getVoteRanking();
-        $rankMap  = array_column($ranking, null, 'name');
+        $servers = $this->serverRegistry->getAll();
 
-        // Current user's gamertag for userHasVoted detection in template
         $myGamertag = null;
         if ($this->getUser()) {
             /** @var \App\Security\User $user */
-            $user = $this->getUser();
+            $user       = $this->getUser();
             $myGamertag = $user->getGamertag();
+        }
+
+        // Register presence so vote state is accurate on page render.
+        if ($myGamertag !== null) {
+            $this->redis->setHeartbeat($myGamertag);
         }
 
         $serverData = [];
@@ -39,32 +45,24 @@ class HomeController extends AbstractController
             $packs        = $this->addonScanner->scan($server);
             $enabledPacks = array_filter($packs, fn($p) => !$p->isSystem && $p->enabled);
             $meta         = $this->serverMetaReader->read($server->dataPath);
-
-            $voters    = $this->voteManager->getActiveVoters($server->name);
-            $threshold = $this->voteManager->getThreshold($server->name);
-            $rank      = $rankMap[$server->name]['activeVotes'] ?? null;
+            $voters       = $this->voteManager->getActiveVoters($server->name);
 
             $serverData[] = [
-                'server'         => $server,
-                'meta'           => $meta,
-                'enabledPacks'   => array_values($enabledPacks),
-                'voteCount'      => $this->voteManager->getActiveVoteCount($server->name),
-                'voteThreshold'  => $threshold,
-                'voters'         => $voters,
-                'userHasVoted'   => $myGamertag !== null && in_array(
+                'server'       => $server,
+                'meta'         => $meta,
+                'enabledPacks' => array_values($enabledPacks),
+                'voteCount'    => $this->voteManager->getActiveVoteCount($server->name),
+                'voters'       => $voters,
+                'userHasVoted' => $myGamertag !== null && in_array(
                     $myGamertag,
                     array_column($voters, 'gamertag'),
                     true,
                 ),
-                'blockingReason' => $this->voteManager->getBlockingReason($server->name),
-                'blockingDetail' => $this->voteManager->getBlockingDetail($server->name),
-                'cooldown'       => $this->voteManager->getCooldown($server->name),
-                'graceUntil'     => $this->voteManager->getGraceUntil($server->name),
-                'graceTotal' => $this->voteManager->getGlobalMeta()->serverEmptyGrace
+                'blocked' => $this->getBlockingReason($server->name, $server->memoryProfile),
             ];
         }
 
-        // Sort by active vote count descending, ties alphabetically — same as getVoteRanking
+        // Sort by active vote count descending, ties alphabetically
         usort($serverData, function (array $a, array $b): int {
             if ($a['voteCount'] !== $b['voteCount']) {
                 return $b['voteCount'] <=> $a['voteCount'];
@@ -73,8 +71,27 @@ class HomeController extends AbstractController
         });
 
         return $this->render('home/index.html.twig', [
-            'serverData'  => $serverData,
-            'myGamertag'  => $myGamertag,
+            'serverData' => $serverData,
+            'myGamertag' => $myGamertag,
         ]);
+    }
+
+    private function getBlockingReason(string $serverName, string $profile): ?string
+    {
+        // reuse ResourceBudgetChecker and RedisClient
+        foreach ($this->serverRegistry->getAll() as $other) {
+            if ($other->name === $serverName || !$other->isRunning()) {
+                continue;
+            }
+            if ($this->redis->getPlayerCount($other->name) > 0) {
+                return 'players';
+            }
+        }
+
+        if (!$this->budgetChecker->canStart($profile)) {
+            return 'resources';
+        }
+
+        return null;
     }
 }

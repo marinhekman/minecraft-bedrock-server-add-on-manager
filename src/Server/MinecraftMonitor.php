@@ -3,12 +3,12 @@
 namespace App\Server;
 
 use App\Service\DockerClient;
-use App\Service\GlobalMetaReader;
 use App\Service\RedisClient;
 use App\Service\VoteManager;
 use Psr\Http\Message\ResponseInterface;
 use React\EventLoop\Loop;
 use React\EventLoop\LoopInterface;
+use React\EventLoop\TimerInterface;
 use React\Http\Browser as ReactBrowser;
 use Symfony\Component\Console\Output\NullOutput;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -17,7 +17,7 @@ class MinecraftMonitor
 {
     private const PLAYER_JOIN_REGEX  = '/Player connected:\s+([^,]+),\s+xuid:\s*(\d+)/i';
     private const PLAYER_LEAVE_REGEX = '/Player disconnected:\s+([^,]+),\s+xuid:\s*(\d+)/i';
-    private const PACK_STACK_REGEX   = '/Pack Stack\s+-\s+\[\d+]\s+.+\(id:\s*([a-f0-9\-]+),/i';
+    private const PACK_STACK_REGEX   = '/Pack Stack\s+-\s+\[\d+]\s+.+\(id:\s*([a-f0-9-]+),/i';
 
     /** @var array<string, array> Known servers */
     private array $servers = [];
@@ -31,22 +31,24 @@ class MinecraftMonitor
     /** @var array<string, string> Incomplete line buffer per server */
     private array $lineBuffers = [];
 
-    private LoopInterface   $loop;
-    private ReactBrowser    $browser;
-    private OutputInterface $output;
-
     /** @var array<string, array<string, string[]>> Pack name → UUIDs index per server */
     private array $packNameIndex = [];
 
-    /** @var array<string, bool> Tracks which servers had an active grace period last cycle */
-    private array $inGracePeriod = [];
+    /** @var TimerInterface|null Active countdown timer */
+    private ?TimerInterface $countdownTimer = null;
+
+    /** @var string|null Server name currently in countdown */
+    private ?string $countdownServer = null;
+
+    private LoopInterface   $loop;
+    private ReactBrowser    $browser;
+    private OutputInterface $output;
 
     public function __construct(
         private readonly DockerClient    $dockerClient,
         private readonly RedisClient     $redisClient,
         private readonly WebSocketServer $wsServer,
         private readonly VoteManager     $voteManager,
-        private readonly GlobalMetaReader $globalMetaReader,
         private readonly string          $mcDataPath,
         private readonly string          $dockerApiUrl,
     ) {
@@ -93,35 +95,132 @@ class MinecraftMonitor
                 $this->removeServer($name);
             }
         }
+
+        $this->evaluateCountdown();
     }
 
     public function refreshStats(): void
     {
         foreach ($this->servers as $name => $server) {
-            // Grace period expiry check.
-            if ($this->inGracePeriod[$name] ?? false) {
-                $graceUntil = $this->redisClient->getServerEmpty($name);
-
-                if ($graceUntil === null) {
-                    // Key has expired — grace period is over.
-                    unset($this->inGracePeriod[$name]);
-                    $this->output->writeln("<info>[$name] Grace period expired — checking auto-stop</info>");
-                    $this->voteManager->triggerAutoStopIfNeeded($name);
-                }
+            if (empty($server['containerId'])) {
+                continue;
             }
 
-            if (empty($server['containerId'])) {
+            // Skip stopped containers — stats for stopped containers are
+            // meaningless and the API returns incomplete data causing warnings.
+            if (!($server['running'] ?? false)) {
                 continue;
             }
 
             try {
                 $stats = $this->dockerClient->getContainerStats($server['containerId']);
                 $this->redisClient->setStats($name, $stats);
+                $this->wsServer->broadcastServerUpdate($name);
             } catch (\RuntimeException) {
                 // Container may have stopped
             }
         }
     }
+
+    // ── Countdown management ──────────────────────────────────────────────────
+
+    /**
+     * Evaluates whether a countdown should start, continue, or be cancelled.
+     * Called after any state change that could affect vote conditions.
+     */
+    public function evaluateCountdown(): void
+    {
+        $candidate = $this->voteManager->checkAndTrigger();
+
+        if ($candidate === null) {
+            // No server qualifies — cancel any active countdown
+            if ($this->countdownServer !== null) {
+                $this->output->writeln("<comment>Countdown cancelled for {$this->countdownServer}</comment>");
+                $this->cancelCountdown();
+            }
+            return;
+        }
+
+        if ($this->countdownServer === $candidate) {
+            // Same server already counting down — nothing to do
+            return;
+        }
+
+        // Different server now leads — cancel old countdown, start new one
+        if ($this->countdownServer !== null) {
+            $this->output->writeln("<comment>Countdown switched from {$this->countdownServer} to {$candidate}</comment>");
+            $this->cancelCountdown();
+        }
+
+        $this->startCountdown($candidate);
+    }
+
+    private function startCountdown(string $serverName): void
+    {
+        $this->output->writeln("<info>Starting " . RedisClient::COUNTDOWN_TTL . "s countdown for $serverName</info>");
+
+        $this->countdownServer = $serverName;
+        $this->redisClient->setCountdown($serverName);
+        $this->wsServer->broadcastServerUpdate($serverName);
+
+        $this->countdownTimer = $this->loop->addTimer(
+            RedisClient::COUNTDOWN_TTL,
+            function () use ($serverName) {
+                $this->fireCountdown($serverName);
+            }
+        );
+    }
+
+    private function cancelCountdown(): void
+    {
+        if ($this->countdownTimer !== null) {
+            $this->loop->cancelTimer($this->countdownTimer);
+            $this->countdownTimer = null;
+        }
+
+        if ($this->countdownServer !== null) {
+            $this->redisClient->clearCountdown($this->countdownServer);
+            $this->wsServer->broadcastServerUpdate($this->countdownServer);
+            $this->countdownServer = null;
+        }
+    }
+
+    private function fireCountdown(string $serverName): void
+    {
+        $this->countdownTimer  = null;
+        $this->countdownServer = null;
+
+        $this->output->writeln("<info>Countdown fired for $serverName — validating...</info>");
+
+        if (!$this->voteManager->confirmStart($serverName)) {
+            $this->output->writeln("<comment>Countdown validation failed for $serverName — aborting start</comment>");
+            $this->redisClient->clearCountdown($serverName);
+            $this->wsServer->broadcastServerUpdate($serverName);
+            $this->evaluateCountdown();
+            return;
+        }
+
+        $data        = $this->redisClient->getServer($serverName);
+        $containerId = $data['containerId'] ?? null;
+
+        if ($containerId === null) {
+            $this->output->writeln("<error>No containerId for $serverName — cannot start</error>");
+            $this->redisClient->clearCountdown($serverName);
+            return;
+        }
+
+        try {
+            $this->output->writeln("<info>Auto-starting $serverName</info>");
+            $this->dockerClient->restartContainer($containerId);
+            $this->voteManager->onServerStarted($serverName);
+            $this->wsServer->broadcastServerUpdate($serverName);
+        } catch (\RuntimeException $e) {
+            $this->output->writeln("<error>Failed to start $serverName: {$e->getMessage()}</error>");
+            $this->redisClient->clearCountdown($serverName);
+        }
+    }
+
+    // ── Server sync ───────────────────────────────────────────────────────────
 
     private function syncServer(string $name): void
     {
@@ -159,21 +258,13 @@ class MinecraftMonitor
             }
         } elseif (!$serverData['running']) {
             $wasRunning = $existing !== null && ($existing['running'] ?? false);
-
             $this->closeLogStream($name);
             $this->redisClient->setLoadedUuids($name, []);
             $this->updatePlayerCount($name, 0);
-            $this->redisClient->clearServerEmpty($name);
-            unset($this->inGracePeriod[$name]);
 
+            // Server just stopped — re-evaluate countdown
             if ($wasRunning) {
-                $this->output->writeln("<info>[$name] Container stopped — checking vote triggers</info>");
-                foreach ($this->redisClient->getAllServerNames() as $candidate) {
-                    if ($candidate === $name) {
-                        continue;
-                    }
-                    $this->voteManager->checkAndTrigger($candidate);
-                }
+                $this->loop->addTimer(1, fn() => $this->evaluateCountdown());
             }
         }
 
@@ -264,7 +355,6 @@ class MinecraftMonitor
                 $uuid    = trim($m[1]);
                 $current = $this->redisClient->getLoadedUuids($serverName);
 
-                // Find the pack name for this UUID, then mark all packs with that name as loaded
                 $uuidsToMark = [$uuid];
                 foreach ($this->packNameIndex[$serverName] ?? [] as $packName => $uuids) {
                     if (in_array($uuid, $uuids, true)) {
@@ -290,18 +380,10 @@ class MinecraftMonitor
             }
 
             if (preg_match(self::PLAYER_JOIN_REGEX, $line, $m)) {
-                $newCount = ($this->playerCounts[$serverName] ?? 0) + 1;
-                $this->updatePlayerCount($serverName, $newCount);
-
-                // Cancel any active grace period — a player has reconnected.
-                if ($this->redisClient->getServerEmpty($serverName) !== null) {
-                    $this->redisClient->clearServerEmpty($serverName);
-                    unset($this->inGracePeriod[$serverName]);
-                    $this->output->writeln("<info>[$serverName] Player rejoined during grace period — grace cancelled</info>");
-                    $this->wsServer->broadcastServerUpdate($serverName);
-                }
-
+                $this->updatePlayerCount($serverName, ($this->playerCounts[$serverName] ?? 0) + 1);
                 $this->output->writeln("<comment>[$serverName] Player joined: {$m[1]}</comment>");
+                // A player joining a running server may cancel a countdown
+                $this->evaluateCountdown();
                 continue;
             }
 
@@ -309,29 +391,13 @@ class MinecraftMonitor
                 $count = max(0, ($this->playerCounts[$serverName] ?? 0) - 1);
                 $this->updatePlayerCount($serverName, $count);
                 $this->output->writeln("<comment>[$serverName] Player left: {$m[1]}</comment>");
-
-                if ($count === 0) {
-                    $grace = $this->globalMetaReader->read()->serverEmptyGrace;
-                    $now   = time();
-
-                    $this->redisClient->setServerEmpty($serverName, $now, $grace);
-                    $this->inGracePeriod[$serverName] = true;
-                    $this->output->writeln("<info>[$serverName] Server empty — grace period started ({$grace}s)</info>");
-                    $this->wsServer->broadcastServerUpdate($serverName);
-                }
-
+                // A player leaving may allow a countdown to start
+                $this->evaluateCountdown();
                 continue;
             }
         }
     }
 
-    /**
-     * Docker log streams use a multiplexed frame format when the container
-     * doesn't have a TTY. Each frame starts with an 8-byte header:
-     *   Byte 0:   stream type (1 = stdout, 2 = stderr)
-     *   Bytes 1-3: zero padding
-     *   Bytes 4-7: frame payload size (big-endian uint32)
-     */
     private function stripDockerFrameHeaders(string $data): string
     {
         $output = '';

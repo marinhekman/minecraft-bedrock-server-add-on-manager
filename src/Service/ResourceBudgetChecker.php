@@ -4,33 +4,35 @@ declare(strict_types=1);
 
 namespace App\Service;
 
-use App\Model\GlobalMeta;
-
 class ResourceBudgetChecker
 {
+    /**
+     * Profile hierarchy — lower index = lower resource requirement.
+     * A server with profile X can occupy any slot at level X or higher.
+     */
+    private const HIERARCHY = ['low', 'medium', 'high'];
+
     public function __construct(
         private readonly RedisClient      $redis,
         private readonly GlobalMetaReader $globalMetaReader,
     ) {}
 
     /**
-     * Returns true if starting a server with $candidateProfile would fit
-     * within at least one of the configured resource_limits combinations,
-     * given the profiles of all currently running containers.
+     * Returns true if a server with $candidateProfile can be started
+     * given the currently running servers and the configured slot sets.
      */
     public function canStart(string $candidateProfile): bool
     {
         $meta = $this->globalMetaReader->read();
 
         if ($meta->resourceLimits === []) {
-            // No limits configured — always allow.
             return true;
         }
 
         $running = $this->getRunningProfiles();
 
-        foreach ($meta->resourceLimits as $combination) {
-            if ($this->isValidCombination([...$running, $candidateProfile], $combination)) {
+        foreach ($meta->resourceLimits as $slotSet) {
+            if ($this->fitsInSlotSet($running, $candidateProfile, $slotSet)) {
                 return true;
             }
         }
@@ -39,8 +41,7 @@ class ResourceBudgetChecker
     }
 
     /**
-     * Returns the memory profile of every server whose Redis data reports
-     * running = true. Servers with no memoryProfile default to 'medium'.
+     * Returns the memory profiles of all currently running servers.
      *
      * @return list<string>
      */
@@ -51,11 +52,7 @@ class ResourceBudgetChecker
         foreach ($this->redis->getAllServerNames() as $name) {
             $data = $this->redis->getServer($name);
 
-            if ($data === null) {
-                continue;
-            }
-
-            if (!($data['running'] ?? false)) {
+            if ($data === null || !($data['running'] ?? false)) {
                 continue;
             }
 
@@ -66,33 +63,94 @@ class ResourceBudgetChecker
     }
 
     /**
-     * Returns true if $profiles (running + candidate combined) fits within
-     * $combination — i.e. the count of each profile does not exceed the
-     * allowed maximum, and no profiles are present that the combination
-     * does not account for.
+     * Returns true if all running servers plus the candidate can be assigned
+     * to slots in the given slot set.
      *
-     * @param list<string>         $profiles    Combined list including candidate.
-     * @param array<string, int>   $combination Allowed maxima, e.g. ['high' => 1, 'low' => 1].
+     * Algorithm:
+     * 1. Build the available slots pool from the slot set definition.
+     * 2. Assign running servers first (lowest-fit-first: prefer the lowest
+     *    slot type that can accommodate the server's profile).
+     * 3. If all running servers are assigned, try to assign the candidate.
+     * 4. Return true only if both steps succeed.
+     *
+     * A server with profile X can occupy a slot of type X or any higher type
+     * (low < medium < high). It prefers the lowest available matching slot.
+     *
+     * @param list<string>       $runningProfiles
+     * @param array<string, int> $slotSet  e.g. ['high' => 1, 'low' => 1]
      */
-    public function isValidCombination(array $profiles, array $combination): bool
-    {
-        // Count how many of each profile are in the combined list.
-        $counts = array_count_values($profiles);
+    public function fitsInSlotSet(
+        array  $runningProfiles,
+        string $candidateProfile,
+        array  $slotSet,
+    ): bool {
+        // Build flat list of available slots, sorted low→high so lowest-fit
+        // assignment naturally picks the lowest available slot.
+        $slots = $this->buildSlots($slotSet);
 
-        // Every profile in the combined list must appear in the combination
-        // and must not exceed its allowed maximum.
-        foreach ($counts as $profile => $count) {
-            if (!isset($combination[$profile])) {
-                // This profile is not mentioned in the combination at all.
-                return false;
+        // Assign running servers first
+        foreach ($runningProfiles as $profile) {
+            $slotIndex = $this->findSlot($slots, $profile);
+            if ($slotIndex === null) {
+                return false; // running servers don't fit — slot set invalid
             }
+            unset($slots[$slotIndex]);
+        }
 
-            if ($count > $combination[$profile]) {
-                // Exceeds the allowed maximum for this profile.
-                return false;
+        // Try to assign the candidate
+        $slotIndex = $this->findSlot($slots, $candidateProfile);
+        return $slotIndex !== null;
+    }
+
+    /**
+     * Builds a flat sorted list of slot type names from a slot set definition.
+     * e.g. ['high' => 1, 'low' => 2] → ['low', 'low', 'high']
+     *
+     * @param array<string, int> $slotSet
+     * @return array<int, string>
+     */
+    private function buildSlots(array $slotSet): array
+    {
+        $slots = [];
+
+        // Add slots in hierarchy order so low slots come first
+        foreach (self::HIERARCHY as $type) {
+            if (isset($slotSet[$type])) {
+                for ($i = 0; $i < $slotSet[$type]; $i++) {
+                    $slots[] = $type;
+                }
             }
         }
 
-        return true;
+        return $slots;
+    }
+
+    /**
+     * Finds the index of the lowest available slot that can accommodate
+     * a server with the given profile.
+     *
+     * A slot can accommodate a server if the slot type is >= the server profile
+     * in the hierarchy (low can go into medium or high slots too).
+     *
+     * @param array<int, string> $slots
+     */
+    private function findSlot(array $slots, string $profile): ?int
+    {
+        $profileLevel = array_search($profile, self::HIERARCHY, true);
+
+        if ($profileLevel === false) {
+            // Unknown profile — treat as medium
+            $profileLevel = array_search('medium', self::HIERARCHY, true);
+        }
+
+        // Slots are already sorted low→high, so the first match is the lowest fit
+        foreach ($slots as $index => $slotType) {
+            $slotLevel = array_search($slotType, self::HIERARCHY, true);
+            if ($slotLevel >= $profileLevel) {
+                return $index;
+            }
+        }
+
+        return null;
     }
 }
