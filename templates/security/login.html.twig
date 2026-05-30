@@ -19,7 +19,7 @@
                         </div>
                     {% endif %}
 
-                    <form method="post" action="{{ path('login') }}">
+                    <form method="post" action="{{ path('login') }}" data-turbo="false">
                         <div class="mb-3">
                             <label for="username" class="form-label">Username</label>
                             <input type="text"
