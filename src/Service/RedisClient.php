@@ -218,4 +218,15 @@ class RedisClient
             $this->redis->del($keys);
         }
     }
+
+    public function setGamertagUsername(string $gamertag, string $username): void
+    {
+        $this->redis->setex("gamertag_user:$gamertag", self::HEARTBEAT_TTL, $username);
+    }
+
+    public function getUsernameByGamertag(string $gamertag): ?string
+    {
+        $val = $this->redis->get("gamertag_user:$gamertag");
+        return $val !== false && $val !== null ? $val : null;
+    }
 }

@@ -38,6 +38,7 @@ class HomeController extends AbstractController
         // Register presence so vote state is accurate on page render.
         if ($myGamertag !== null) {
             $this->redis->setHeartbeat($myGamertag);
+            $this->redis->setGamertagUsername($myGamertag, $user->getUserIdentifier());
         }
 
         $serverData = [];

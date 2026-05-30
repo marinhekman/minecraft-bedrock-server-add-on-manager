@@ -206,8 +206,10 @@ final class VoteManager
 
     private function resolveAvatarPath(string $gamertag): string
     {
-        $username = strtolower($gamertag);
-        $path     = '/mc-data/config/avatars/' . $username . '.png';
+        $username = $this->redis->getUsernameByGamertag($gamertag)
+            ?? strtolower(str_replace(' ', '', $gamertag)); // fallback
+
+        $path = '/mc-data/config/avatars/' . $username . '.png';
 
         return file_exists($path)
             ? '/avatars/' . $username . '.png'

@@ -329,12 +329,26 @@ function reorderCards() {
 
     const cards = Array.from(container.querySelectorAll('.card[data-server]'));
 
+    // Capture current DOM order before sorting — used as tiebreaker
+    // so ties never cause movement (cards only move when strictly outranked).
+    const currentPositions = {};
+    cards.forEach((card, i) => {
+        currentPositions[card.dataset.server] = i;
+    });
+
+    const currentOrder = cards.map(c => c.dataset.server).join(',');
+
     cards.sort((a, b) => {
         const aVotes = parseInt(a.dataset.voteCount || '0');
         const bVotes = parseInt(b.dataset.voteCount || '0');
         if (bVotes !== aVotes) return bVotes - aVotes;
-        return (a.dataset.server || '').localeCompare(b.dataset.server || '');
+        // Tie — preserve existing DOM order, no movement
+        return currentPositions[a.dataset.server] - currentPositions[b.dataset.server];
     });
+
+    // Only touch the DOM if the order actually changed
+    const newOrder = cards.map(c => c.dataset.server).join(',');
+    if (currentOrder === newOrder) return;
 
     const medals       = ['👑', '🥈', '🥉'];
     const medalClasses = ['text-warning fw-bold', 'text-secondary fw-bold', 'text-danger fw-bold'];
