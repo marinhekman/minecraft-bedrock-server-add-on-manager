@@ -147,15 +147,15 @@ class WebSocketServer implements MessageComponentInterface
                 'count'   => $this->voteManager->getActiveVoteCount($name),
                 'voters'  => $this->voteManager->getActiveVoters($name),
             ],
+            'stopCountdownUntil' => $this->resolveStopCountdownUntil($name, $server),
             'countdownUntil' => $countdown !== null
                 ? $countdown + RedisClient::COUNTDOWN_TTL
                 : null,
         ];
     }
 
-    private function resolveStopCountdownUntil(string $name): ?int
+    private function resolveStopCountdownUntil(string $name, ?array $server): ?int
     {
-        $server = $this->redisClient->getServer($name);
         if (!($server['running'] ?? false)) {
             return null;
         }
