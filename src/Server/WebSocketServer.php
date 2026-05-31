@@ -3,6 +3,7 @@
 namespace App\Server;
 
 use App\Service\RedisClient;
+use App\Service\ResourceBudgetChecker;
 use App\Service\VoteManager;
 use Ratchet\ConnectionInterface;
 use Ratchet\MessageComponentInterface;
@@ -17,8 +18,9 @@ class WebSocketServer implements MessageComponentInterface
     private OutputInterface $output;
 
     public function __construct(
-        private readonly RedisClient $redisClient,
-        private readonly VoteManager $voteManager,
+        private readonly RedisClient           $redisClient,
+        private readonly VoteManager           $voteManager,
+        private readonly ResourceBudgetChecker $budgetChecker,
     ) {
         $this->clients = new \SplObjectStorage();
         $this->output  = new NullOutput();
@@ -138,19 +140,20 @@ class WebSocketServer implements MessageComponentInterface
         $countdown = $this->redisClient->getCountdown($name);
 
         return [
-            'server'        => $server,
-            'playerCount'   => $this->redisClient->getPlayerCount($name),
-            'loadedUuids'   => $this->redisClient->getLoadedUuids($name),
-            'stats'         => $this->redisClient->getStats($name),
-            'memoryProfile' => $server['memoryProfile'] ?? 'medium',
-            'votes'         => [
+            'server'             => $server,
+            'playerCount'        => $this->redisClient->getPlayerCount($name),
+            'loadedUuids'        => $this->redisClient->getLoadedUuids($name),
+            'stats'              => $this->redisClient->getStats($name),
+            'memoryProfile'      => $server['memoryProfile'] ?? 'medium',
+            'votes'              => [
                 'count'   => $this->voteManager->getActiveVoteCount($name),
                 'voters'  => $this->voteManager->getActiveVoters($name),
             ],
             'stopCountdownUntil' => $this->resolveStopCountdownUntil($name, $server),
-            'countdownUntil' => $countdown !== null
+            'countdownUntil'     => $countdown !== null
                 ? $countdown + RedisClient::COUNTDOWN_TTL
                 : null,
+            'blocked'            => $this->getBlockingReason($name, $server),
         ];
     }
 
@@ -166,5 +169,57 @@ class WebSocketServer implements MessageComponentInterface
         }
 
         return $stopStartedAt + RedisClient::COUNTDOWN_TTL;
+    }
+
+    /**
+     * Returns the blocking reason for a stopped server that has votes but cannot start yet.
+     *
+     * Values:
+     *   null                — no block (can start, or no votes)
+     *   'players'           — a running server has players online
+     *   'players_leaving'   — players recently left but server hasn't stopped yet
+     *   'resources'         — not enough resources, no stop in progress
+     *   'resources_stopping'— not enough resources but a stop countdown is active
+     */
+    private function getBlockingReason(string $name, ?array $server): ?string
+    {
+        // Only relevant for stopped servers with votes
+        if ($server['running'] ?? false) {
+            return null;
+        }
+
+        if ($this->voteManager->getActiveVoteCount($name) === 0) {
+            return null;
+        }
+
+        // Check players on any running server
+        $anyStopCountdownActive = false;
+        foreach ($this->redisClient->getAllServerNames() as $otherName) {
+            $other = $this->redisClient->getServer($otherName);
+            if (!($other['running'] ?? false)) {
+                continue;
+            }
+
+            if ($this->redisClient->getStopCountdown($otherName) !== null) {
+                $anyStopCountdownActive = true;
+            }
+
+            if ($this->redisClient->getPlayerCount($otherName) > 0) {
+                // Players online — check if a stop countdown is active for this server
+                // (meaning we're already trying to free it up)
+                if ($this->redisClient->getStopCountdown($otherName) !== null) {
+                    return 'players_leaving';
+                }
+                return 'players';
+            }
+        }
+
+        // Check resource budget
+        $profile = $server['memoryProfile'] ?? 'medium';
+        if (!$this->budgetChecker->canStart($profile)) {
+            return $anyStopCountdownActive ? 'resources_stopping' : 'resources';
+        }
+
+        return null;
     }
 }
