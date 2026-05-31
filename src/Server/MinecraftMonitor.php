@@ -34,11 +34,14 @@ class MinecraftMonitor
     /** @var array<string, array<string, string[]>> Pack name → UUIDs index per server */
     private array $packNameIndex = [];
 
-    /** @var TimerInterface|null Active countdown timer */
+    /** @var TimerInterface|null Active start countdown timer */
     private ?TimerInterface $countdownTimer = null;
 
-    /** @var string|null Server name currently in countdown */
+    /** @var string|null Server name currently in start countdown */
     private ?string $countdownServer = null;
+
+    /** @var array<string, TimerInterface> Active stop countdown timers keyed by server name */
+    private array $stopCountdownTimers = [];
 
     private LoopInterface   $loop;
     private ReactBrowser    $browser;
@@ -106,12 +109,6 @@ class MinecraftMonitor
                 continue;
             }
 
-            // Skip stopped containers — stats for stopped containers are
-            // meaningless and the API returns incomplete data causing warnings.
-            if (!($server['running'] ?? false)) {
-                continue;
-            }
-
             try {
                 $stats = $this->dockerClient->getContainerStats($server['containerId']);
                 $this->redisClient->setStats($name, $stats);
@@ -133,26 +130,60 @@ class MinecraftMonitor
         $candidate = $this->voteManager->checkAndTrigger();
 
         if ($candidate === null) {
-            // No server qualifies — cancel any active countdown
+            // No server qualifies for start — cancel any active start countdown
             if ($this->countdownServer !== null) {
                 $this->output->writeln("<comment>Countdown cancelled for {$this->countdownServer}</comment>");
                 $this->cancelCountdown();
             }
+
+            // Check if we need to auto-stop servers to free resources
+            $this->evaluateAutoStop();
             return;
         }
+
+        // Cancel any pending auto-stop countdowns — not needed if start can proceed
+        $this->cancelAllStopCountdowns();
 
         if ($this->countdownServer === $candidate) {
-            // Same server already counting down — nothing to do
             return;
         }
 
-        // Different server now leads — cancel old countdown, start new one
         if ($this->countdownServer !== null) {
             $this->output->writeln("<comment>Countdown switched from {$this->countdownServer} to {$candidate}</comment>");
             $this->cancelCountdown();
         }
 
         $this->startCountdown($candidate);
+    }
+
+    private function evaluateAutoStop(): void
+    {
+        $toStop = $this->voteManager->getServersToAutoStop();
+
+        if (empty($toStop)) {
+            // Nothing to stop — cancel any existing stop countdowns for servers
+            // that no longer need stopping
+            foreach (array_keys($this->stopCountdownTimers) as $name) {
+                if (!in_array($name, $toStop, true)) {
+                    $this->cancelStopCountdown($name);
+                }
+            }
+            return;
+        }
+
+        foreach ($toStop as $serverName) {
+            if (isset($this->stopCountdownTimers[$serverName])) {
+                continue; // Already counting down
+            }
+            $this->startStopCountdown($serverName);
+        }
+
+        // Cancel stop countdowns for servers no longer in the list
+        foreach (array_keys($this->stopCountdownTimers) as $name) {
+            if (!in_array($name, $toStop, true)) {
+                $this->cancelStopCountdown($name);
+            }
+        }
     }
 
     private function startCountdown(string $serverName): void
@@ -182,6 +213,76 @@ class MinecraftMonitor
             $this->redisClient->clearCountdown($this->countdownServer);
             $this->wsServer->broadcastServerUpdate($this->countdownServer);
             $this->countdownServer = null;
+        }
+    }
+
+    private function startStopCountdown(string $serverName): void
+    {
+        $this->output->writeln("<info>Starting " . RedisClient::COUNTDOWN_TTL . "s stop countdown for $serverName</info>");
+
+        $this->redisClient->setStopCountdown($serverName);
+        $this->wsServer->broadcastServerUpdate($serverName);
+
+        $this->stopCountdownTimers[$serverName] = $this->loop->addTimer(
+            RedisClient::COUNTDOWN_TTL,
+            function () use ($serverName) {
+                $this->fireStopCountdown($serverName);
+            }
+        );
+    }
+
+    private function cancelStopCountdown(string $serverName): void
+    {
+        if (isset($this->stopCountdownTimers[$serverName])) {
+            $this->loop->cancelTimer($this->stopCountdownTimers[$serverName]);
+            unset($this->stopCountdownTimers[$serverName]);
+        }
+
+        $this->redisClient->clearStopCountdown($serverName);
+        $this->wsServer->broadcastServerUpdate($serverName);
+        $this->output->writeln("<comment>Stop countdown cancelled for $serverName</comment>");
+    }
+
+    private function cancelAllStopCountdowns(): void
+    {
+        foreach (array_keys($this->stopCountdownTimers) as $name) {
+            $this->cancelStopCountdown($name);
+        }
+    }
+
+    private function fireStopCountdown(string $serverName): void
+    {
+        unset($this->stopCountdownTimers[$serverName]);
+
+        $this->output->writeln("<info>Stop countdown fired for $serverName</info>");
+
+        $data        = $this->redisClient->getServer($serverName);
+        $containerId = $data['containerId'] ?? null;
+
+        if ($containerId === null) {
+            $this->output->writeln("<error>No containerId for $serverName — cannot stop</error>");
+            $this->redisClient->clearStopCountdown($serverName);
+            return;
+        }
+
+        // Safety check — don't stop if players joined during countdown
+        if ($this->redisClient->getPlayerCount($serverName) > 0) {
+            $this->output->writeln("<comment>Players joined $serverName during stop countdown — aborting stop</comment>");
+            $this->redisClient->clearStopCountdown($serverName);
+            $this->wsServer->broadcastServerUpdate($serverName);
+            return;
+        }
+
+        try {
+            $this->output->writeln("<info>Auto-stopping $serverName to free resources</info>");
+            $this->dockerClient->stopContainer($containerId);
+            $this->voteManager->onServerAutoStopped($serverName);
+            $this->wsServer->broadcastServerUpdate($serverName);
+            // Re-evaluate after stop — may now trigger start countdown
+            $this->loop->addTimer(2, fn() => $this->evaluateCountdown());
+        } catch (\RuntimeException $e) {
+            $this->output->writeln("<error>Failed to stop $serverName: {$e->getMessage()}</error>");
+            $this->redisClient->clearStopCountdown($serverName);
         }
     }
 

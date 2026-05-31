@@ -92,14 +92,8 @@ final class VoteManager
      * Evaluates whether a server should begin its start countdown.
      * Returns the server name to begin countdown for, or null.
      *
-     * Rules:
-     * - Server must be stopped with at least 1 active vote
-     * - Must have strictly more active votes than any other stopped server
-     * - No running server has players
-     * - No cooldown active
-     * - ResourceBudgetChecker passes
-     *
-     * Only one server can be in countdown at a time.
+     * If resources are blocked, also evaluates which running empty servers
+     * should be auto-stopped. Returns those via getServersToAutoStop().
      */
     public function checkAndTrigger(): ?string
     {
@@ -114,7 +108,6 @@ final class VoteManager
             }
 
             $votes = $this->getActiveVoteCount($name);
-            error_log("[checkAndTrigger] stopped server: $name, activeVotes: $votes");
 
             if ($votes > $leaderVotes) {
                 $secondVotes = $leaderVotes;
@@ -125,64 +118,141 @@ final class VoteManager
             }
         }
 
-        error_log("[checkAndTrigger] leader=$leader, leaderVotes=$leaderVotes, secondVotes=$secondVotes");
-
         if ($leader === null || $leaderVotes === 0 || $leaderVotes === $secondVotes) {
             return null;
         }
 
         foreach ($this->redis->getAllServerNames() as $name) {
             if ($this->redis->getPlayerCount($name) > 0) {
-                error_log("[checkAndTrigger] blocked by players on $name");
                 return null;
             }
         }
 
         if ($this->redis->hasCooldown($leader)) {
-            error_log("[checkAndTrigger] blocked by cooldown on $leader");
             return null;
         }
 
         $data    = $this->redis->getServer($leader);
         $profile = $data['memoryProfile'] ?? 'medium';
-        if (!$this->budgetChecker->canStart($profile)) {
-            error_log("[checkAndTrigger] blocked by resource budget, profile=$profile");
-            return null;
+
+        if ($this->budgetChecker->canStart($profile)) {
+            return $leader;
         }
 
-        error_log("[checkAndTrigger] returning leader=$leader");
-        return $leader;
+        // Resources blocked — auto-stop logic will handle it via getServersToAutoStop()
+        return null;
     }
 
     /**
-     * Called when the countdown timer fires. Validates conditions are still
-     * met, then starts the server and sets cooldown.
-     * Returns true if the server was started.
+     * Returns servers that should be auto-stopped to free resources for the
+     * vote leader. Returns empty array if auto-stop is not possible or needed.
+     *
+     * @return list<string> Server names to stop, sorted highest profile first
+     */
+    public function getServersToAutoStop(): array
+    {
+        // Find the vote leader
+        $leader      = null;
+        $leaderVotes = 0;
+        $secondVotes = 0;
+
+        foreach ($this->redis->getAllServerNames() as $name) {
+            $data = $this->redis->getServer($name);
+            if ($data === null || ($data['running'] ?? false)) {
+                continue;
+            }
+
+            $votes = $this->getActiveVoteCount($name);
+            if ($votes > $leaderVotes) {
+                $secondVotes = $leaderVotes;
+                $leaderVotes = $votes;
+                $leader      = $name;
+            } elseif ($votes > $secondVotes) {
+                $secondVotes = $votes;
+            }
+        }
+
+        if ($leader === null || $leaderVotes === 0 || $leaderVotes === $secondVotes) {
+            return [];
+        }
+
+        // Already startable — no auto-stop needed
+        $leaderData    = $this->redis->getServer($leader);
+        $leaderProfile = $leaderData['memoryProfile'] ?? 'medium';
+        if ($this->budgetChecker->canStart($leaderProfile)) {
+            return [];
+        }
+
+        // Find running servers with 0 players, sorted highest profile first
+        $candidates = [];
+        foreach ($this->redis->getAllServerNames() as $name) {
+            if ($name === $leader) {
+                continue;
+            }
+            $data = $this->redis->getServer($name);
+            if ($data === null || !($data['running'] ?? false)) {
+                continue;
+            }
+            if ($this->redis->getPlayerCount($name) > 0) {
+                continue;
+            }
+            $candidates[] = [
+                'name'    => $name,
+                'profile' => $data['memoryProfile'] ?? 'medium',
+            ];
+        }
+
+        // Sort highest profile first (most resources freed)
+        $hierarchy = ['low' => 0, 'medium' => 1, 'high' => 2];
+        usort($candidates, function (array $a, array $b) use ($hierarchy): int {
+            return ($hierarchy[$b['profile']] ?? 1) <=> ($hierarchy[$a['profile']] ?? 1);
+        });
+
+        // Simulate stopping candidates until canStart passes
+        $runningProfiles = $this->budgetChecker->getRunningProfiles();
+        $toStop          = [];
+
+        foreach ($candidates as $candidate) {
+            $toStop[]        = $candidate['name'];
+            $runningProfiles = array_values(array_filter(
+                $runningProfiles,
+                fn($p) => $p !== $candidate['profile'],
+            ));
+
+            // Re-check with simulated running profiles
+            if ($this->budgetChecker->canStartWithProfiles($leaderProfile, $runningProfiles)) {
+                return $toStop;
+            }
+        }
+
+        // Cannot free enough resources
+        return [];
+    }
+
+    /**
+     * Called when the start countdown timer fires.
      */
     public function confirmStart(string $serverName): bool
     {
-        // Re-validate — conditions may have changed during the 15s countdown
         $current = $this->checkAndTrigger();
-        if ($current !== $serverName) {
-            return false;
-        }
-
-        $data        = $this->redis->getServer($serverName);
-        $containerId = $data['containerId'] ?? null;
-        if ($containerId === null) {
-            return false;
-        }
-
-        return true;
+        return $current === $serverName;
     }
 
     /**
-     * Post-start cleanup — called by MinecraftMonitor after restartContainer succeeds.
+     * Post-start cleanup.
      */
     public function onServerStarted(string $serverName): void
     {
         $this->redis->clearCountdown($serverName);
         $this->redis->setCooldown($serverName, RedisClient::COUNTDOWN_TTL * 4);
+    }
+
+    /**
+     * Post-stop cleanup for auto-stopped servers.
+     */
+    public function onServerAutoStopped(string $serverName): void
+    {
+        $this->redis->clearStopCountdown($serverName);
     }
 
     // ── Internal helpers ──────────────────────────────────────────────────────
@@ -207,7 +277,7 @@ final class VoteManager
     private function resolveAvatarPath(string $gamertag): string
     {
         $username = $this->redis->getUsernameByGamertag($gamertag)
-            ?? strtolower(str_replace(' ', '', $gamertag)); // fallback
+            ?? strtolower(str_replace(' ', '', $gamertag));
 
         $path = '/mc-data/config/avatars/' . $username . '.png';
 

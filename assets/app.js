@@ -129,13 +129,29 @@ document.addEventListener('turbo:load', startUptimeTicker);
 
 function startCountdownTicker() {
     setInterval(() => {
+        const ttl = window.countdownTtl || 15;
+
+        // Start countdown bars
         document.querySelectorAll('.countdown-block').forEach(block => {
             const until     = parseInt(block.dataset.countdownUntil);
             const remaining = Math.max(0, until - Math.floor(Date.now() / 1000));
-            const ttl       = window.countdownTtl || 15;
 
             const secsEl     = block.querySelector('.countdown-seconds');
             const progressEl = block.querySelector('.countdown-progress');
+
+            if (secsEl) secsEl.textContent = remaining;
+            if (progressEl) progressEl.style.width = ((remaining / ttl) * 100) + '%';
+
+            if (remaining === 0) block.remove();
+        });
+
+        // Stop countdown bars
+        document.querySelectorAll('.stop-countdown-block').forEach(block => {
+            const until     = parseInt(block.dataset.stopCountdownUntil);
+            const remaining = Math.max(0, until - Math.floor(Date.now() / 1000));
+
+            const secsEl     = block.querySelector('.stop-countdown-seconds');
+            const progressEl = block.querySelector('.stop-countdown-progress');
 
             if (secsEl) secsEl.textContent = remaining;
             if (progressEl) progressEl.style.width = ((remaining / ttl) * 100) + '%';
@@ -246,7 +262,7 @@ function applyServerUpdate(serverName, data) {
     if (blocked && !isRunning && votes.count > 0) {
         const messages = {
             players:   '👥 Another server has players online. This server will start automatically once they leave.',
-            resources: '⚠️ Not enough resources to start this server right now. Waiting for a running server to stop.',
+            resources: '⚠️ Lack of resources — waiting for servers to stop.',
         };
         const alertClass = blocked === 'resources' ? 'alert-warning' : 'alert-info';
         const html = `<div class="alert ${alertClass} py-2 mb-3 blocking-block">${messages[blocked] ?? 'Cannot start right now.'}</div>`;
@@ -258,6 +274,33 @@ function applyServerUpdate(serverName, data) {
         }
     } else if (blockingBlock) {
         blockingBlock.remove();
+    }
+
+    // Update stop countdown block (shown on running server being auto-stopped)
+    const stopCountdownUntil = data.stopCountdownUntil ?? null;
+    let stopCountdownBlock   = card.querySelector('.stop-countdown-block');
+
+    if (stopCountdownUntil && isRunning) {
+        if (!stopCountdownBlock) {
+            const block = document.createElement('div');
+            block.className = 'alert alert-danger py-2 mb-0 stop-countdown-block';
+            block.dataset.stopCountdownUntil = stopCountdownUntil;
+            block.innerHTML = `
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span>🔴 <strong>Stopping in <span class="stop-countdown-seconds">–</span>s</strong></span>
+                    <small class="text-muted">Freeing resources for voted server</small>
+                </div>
+                <div class="progress" style="height:6px">
+                    <div class="progress-bar bg-danger stop-countdown-progress" role="progressbar" style="width:100%"></div>
+                </div>`;
+            // Insert at top of card body
+            const cardBody = card.querySelector('.card-body');
+            if (cardBody) cardBody.prepend(block);
+        } else {
+            stopCountdownBlock.dataset.stopCountdownUntil = stopCountdownUntil;
+        }
+    } else if (stopCountdownBlock) {
+        stopCountdownBlock.remove();
     }
 
     // Update countdown block
@@ -329,26 +372,12 @@ function reorderCards() {
 
     const cards = Array.from(container.querySelectorAll('.card[data-server]'));
 
-    // Capture current DOM order before sorting — used as tiebreaker
-    // so ties never cause movement (cards only move when strictly outranked).
-    const currentPositions = {};
-    cards.forEach((card, i) => {
-        currentPositions[card.dataset.server] = i;
-    });
-
-    const currentOrder = cards.map(c => c.dataset.server).join(',');
-
     cards.sort((a, b) => {
         const aVotes = parseInt(a.dataset.voteCount || '0');
         const bVotes = parseInt(b.dataset.voteCount || '0');
         if (bVotes !== aVotes) return bVotes - aVotes;
-        // Tie — preserve existing DOM order, no movement
-        return currentPositions[a.dataset.server] - currentPositions[b.dataset.server];
+        return (a.dataset.server || '').localeCompare(b.dataset.server || '');
     });
-
-    // Only touch the DOM if the order actually changed
-    const newOrder = cards.map(c => c.dataset.server).join(',');
-    if (currentOrder === newOrder) return;
 
     const medals       = ['👑', '🥈', '🥉'];
     const medalClasses = ['text-warning fw-bold', 'text-secondary fw-bold', 'text-danger fw-bold'];

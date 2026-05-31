@@ -3,7 +3,6 @@
 namespace App\Server;
 
 use App\Service\RedisClient;
-use App\Service\ResourceBudgetChecker;
 use App\Service\VoteManager;
 use Ratchet\ConnectionInterface;
 use Ratchet\MessageComponentInterface;
@@ -20,7 +19,6 @@ class WebSocketServer implements MessageComponentInterface
     public function __construct(
         private readonly RedisClient $redisClient,
         private readonly VoteManager $voteManager,
-        private readonly ResourceBudgetChecker $budgetChecker,
     ) {
         $this->clients = new \SplObjectStorage();
         $this->output  = new NullOutput();
@@ -152,39 +150,21 @@ class WebSocketServer implements MessageComponentInterface
             'countdownUntil' => $countdown !== null
                 ? $countdown + RedisClient::COUNTDOWN_TTL
                 : null,
-            'blocked' => $this->getBlockingReason($name, $server),
         ];
     }
 
-    private function getBlockingReason(string $name, ?array $server): ?string
+    private function resolveStopCountdownUntil(string $name): ?int
     {
-        // Only relevant for stopped servers
-        if ($server['running'] ?? false) {
+        $server = $this->redisClient->getServer($name);
+        if (!($server['running'] ?? false)) {
             return null;
         }
 
-        // No votes — no point showing a blocking message
-        if ($this->voteManager->getActiveVoteCount($name) === 0) {
+        $stopStartedAt = $this->redisClient->getStopCountdown($name);
+        if ($stopStartedAt === null) {
             return null;
         }
 
-        // Check players on any running server
-        foreach ($this->redisClient->getAllServerNames() as $otherName) {
-            if ($otherName === $name) {
-                continue;
-            }
-            $other = $this->redisClient->getServer($otherName);
-            if (($other['running'] ?? false) && $this->redisClient->getPlayerCount($otherName) > 0) {
-                return 'players';
-            }
-        }
-
-        // Check resource budget
-        $profile = $server['memoryProfile'] ?? 'medium';
-        if (!$this->budgetChecker->canStart($profile)) {
-            return 'resources';
-        }
-
-        return null;
+        return $stopStartedAt + RedisClient::COUNTDOWN_TTL;
     }
 }

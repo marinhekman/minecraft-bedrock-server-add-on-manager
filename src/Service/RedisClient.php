@@ -229,4 +229,26 @@ class RedisClient
         $val = $this->redis->get("gamertag_user:$gamertag");
         return $val !== false && $val !== null ? $val : null;
     }
+
+    // ── Stop countdown ────────────────────────────────────────────────────────────
+
+    public function setStopCountdown(string $serverName): void
+    {
+        $this->redis->setex(
+            "stop_countdown:$serverName",
+            self::COUNTDOWN_TTL,
+            (string) time(),
+        );
+    }
+
+    public function getStopCountdown(string $serverName): ?int
+    {
+        $val = $this->redis->get("stop_countdown:$serverName");
+        return $val !== null && $val !== false ? (int) $val : null;
+    }
+
+    public function clearStopCountdown(string $serverName): void
+    {
+        $this->redis->del(["stop_countdown:$serverName"]);
+    }
 }
