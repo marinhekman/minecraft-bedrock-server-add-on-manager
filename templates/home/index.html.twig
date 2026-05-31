@@ -81,13 +81,13 @@
                         {% endif %}
                         {% if server.isRunning %}
                             <span class="badge bg-success">● Running</span>
-                            <span class="badge bg-dark stat-uptime" title="Uptime"
-                                  style="{{ server.isRunning ? '' : 'display:none' }}">UP –</span>
-                            <span class="badge bg-primary stat-players" title="Online players"
-                                  style="{{ server.isRunning ? '' : 'display:none' }}">👥 –</span>
                         {% else %}
                             <span class="badge bg-danger">● Stopped</span>
                         {% endif %}
+                        <span class="badge bg-dark stat-uptime" title="Uptime"
+                              style="{{ server.isRunning ? '' : 'display:none' }}">UP –</span>
+                        <span class="badge bg-primary stat-players" title="Online players"
+                              style="{{ server.isRunning ? '' : 'display:none' }}">👥 –</span>
                     </div>
                 </div>
 
