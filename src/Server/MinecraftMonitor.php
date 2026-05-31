@@ -113,9 +113,6 @@ class MinecraftMonitor
                 continue;
             }
 
-            // Refresh player count TTL so it doesn't expire between log events
-            $this->redisClient->setPlayerCount($name, $this->playerCounts[$name] ?? 0);
-
             try {
                 $stats = $this->dockerClient->getContainerStats($server['containerId']);
                 $this->redisClient->setStats($name, $stats);
