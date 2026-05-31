@@ -265,10 +265,12 @@ function applyServerUpdate(serverName, data) {
 
     if (blocked && !isRunning && !isStarting && votes.count > 0) {
         const messages = {
-            players:   '👥 Another server has players online. This server will start automatically once they leave.',
-            resources: '⚠️ Lack of resources — waiting for servers to stop.',
+            players:            '👥 Another server has players online. This server will start automatically once they leave.',
+            players_leaving:    '👥 Players have left — waiting for that server to stop before starting this one.',
+            resources:          '⚠️ Lack of resources — waiting for a server to stop.',
+            resources_stopping: '⚠️ Stopping another server to free up resources...',
         };
-        const alertClass = blocked === 'resources' ? 'alert-warning' : 'alert-info';
+        const alertClass = (blocked === 'resources' || blocked === 'resources_stopping') ? 'alert-warning' : 'alert-info';
         const html = `<div class="alert ${alertClass} py-2 mb-3 blocking-block">${messages[blocked] ?? 'Cannot start right now.'}</div>`;
 
         if (blockingBlock) {

@@ -193,34 +193,42 @@ class WebSocketServer implements MessageComponentInterface
             return null;
         }
 
-        // Check players on any running server
+        $profile = $server['memoryProfile'] ?? 'medium';
+
+        // Already startable — no block
+        if ($this->budgetChecker->canStart($profile)) {
+            return null;
+        }
+
+        // Resources blocked — check stop countdown state first
         $anyStopCountdownActive = false;
         foreach ($this->redisClient->getAllServerNames() as $otherName) {
-            $other = $this->redisClient->getServer($otherName);
-            if (!($other['running'] ?? false)) {
-                continue;
-            }
-
             if ($this->redisClient->getStopCountdown($otherName) !== null) {
                 $anyStopCountdownActive = true;
+                break;
             }
+        }
 
-            if ($this->redisClient->getPlayerCount($otherName) > 0) {
-                // Players online — check if a stop countdown is active for this server
-                // (meaning we're already trying to free it up)
-                if ($this->redisClient->getStopCountdown($otherName) !== null) {
-                    return 'players_leaving';
-                }
+        if ($anyStopCountdownActive) {
+            return 'resources_stopping';
+        }
+
+        // No stop countdown active — check if players are blocking the needed slot
+        // by seeing if getServersToAutoStop returns empty due to player-occupied servers
+        $toStop = $this->voteManager->getServersToAutoStop();
+        if (!empty($toStop)) {
+            // Empty servers available to stop — system will handle it, no block message needed
+            return null;
+        }
+
+        // Cannot free resources — check if players are the reason
+        foreach ($this->redisClient->getAllServerNames() as $otherName) {
+            $other = $this->redisClient->getServer($otherName);
+            if (($other['running'] ?? false) && $this->redisClient->getPlayerCount($otherName) > 0) {
                 return 'players';
             }
         }
 
-        // Check resource budget
-        $profile = $server['memoryProfile'] ?? 'medium';
-        if (!$this->budgetChecker->canStart($profile)) {
-            return $anyStopCountdownActive ? 'resources_stopping' : 'resources';
-        }
-
-        return null;
+        return 'resources';
     }
 }
