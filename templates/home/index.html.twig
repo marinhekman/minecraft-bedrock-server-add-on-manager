@@ -67,7 +67,6 @@
 
             <div class="card shadow-sm mb-4 {{ cardBg }}"
                  data-server="{{ server.name }}"
-                 data-status-url="{{ path('server_status', {serverName: server.name}) }}"
                  data-vote-count="{{ data.voteCount }}"
                  data-csrf-token="{{ csrf_token('vote-' ~ server.name) }}">
 
