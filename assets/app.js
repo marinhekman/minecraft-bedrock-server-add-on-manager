@@ -372,6 +372,27 @@ function applyServerUpdate(serverName, data) {
     card.dataset.voteCount = votes.count;
 }
 
+function updateMedals() {
+    const container = document.getElementById('server-cards');
+    if (!container) return;
+
+    const cards        = Array.from(container.querySelectorAll('.card[data-server]'));
+    const medals       = ['👑', '🥈', '🥉'];
+    const medalClasses = ['text-warning fw-bold', 'text-secondary fw-bold', 'text-danger fw-bold'];
+    const bgClasses    = ['card-gold', 'card-silver', 'card-bronze'];
+
+    cards.forEach((card, i) => {
+        const medalEl = card.querySelector('.card-header span[title^="Position"]');
+        if (medalEl) {
+            medalEl.textContent = i < 3 ? medals[i] : `#${i + 1}`;
+            medalEl.className   = i < 3 ? medalClasses[i] : 'text-muted';
+            medalEl.title       = `Position #${i + 1}`;
+        }
+        card.classList.remove('card-gold', 'card-silver', 'card-bronze');
+        if (i < 3) card.classList.add(bgClasses[i]);
+    });
+}
+
 let reorderPending = false;
 
 function scheduleReorder() {
@@ -438,7 +459,9 @@ function initWebSocket() {
             Object.entries(msg.servers || {}).forEach(([name, data]) => {
                 applyServerUpdate(name, data);
             });
-            scheduleReorder();
+            // Apply medals to server-rendered order without reordering —
+            // the server-rendered order is the correct baseline on first load.
+            updateMedals();
         }
 
         if (msg.type === 'server_update') {
