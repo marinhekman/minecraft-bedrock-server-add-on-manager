@@ -108,7 +108,6 @@ final class VoteManager
             }
 
             $votes = $this->getActiveVoteCount($name);
-
             if ($votes > $leaderVotes) {
                 $secondVotes = $leaderVotes;
                 $leaderVotes = $votes;
@@ -122,12 +121,6 @@ final class VoteManager
             return null;
         }
 
-        foreach ($this->redis->getAllServerNames() as $name) {
-            if ($this->redis->getPlayerCount($name) > 0) {
-                return null;
-            }
-        }
-
         if ($this->redis->hasCooldown($leader)) {
             return null;
         }
@@ -135,11 +128,20 @@ final class VoteManager
         $data    = $this->redis->getServer($leader);
         $profile = $data['memoryProfile'] ?? 'medium';
 
+        // If resources allow starting without stopping anything — go ahead
+        // regardless of players on other running servers.
         if ($this->budgetChecker->canStart($profile)) {
             return $leader;
         }
 
-        // Resources blocked — auto-stop logic will handle it via getServersToAutoStop()
+        // Resources blocked — only proceed if all running servers are empty
+        // (auto-stop can free the needed slot).
+        foreach ($this->redis->getAllServerNames() as $name) {
+            if ($this->redis->getPlayerCount($name) > 0) {
+                return null;
+            }
+        }
+
         return null;
     }
 
