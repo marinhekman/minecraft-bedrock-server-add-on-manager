@@ -18,13 +18,14 @@ A web-based dashboard for managing add-ons (behaviour packs and resource packs) 
 - 👤 Shows logged-in user's Xbox gamertag and avatar with role badge (Admin / User / Anonymous)
 
 ### Voting system
-- 🗳️ Players vote for which stopped server to start next
-- 🏅 Servers ranked by active vote count — gold/silver/bronze medals, cards reorder live
+- 🗳️ Players vote for which stopped server to start next — vote button always visible, retract at any time
+- 🏅 Servers ranked by active vote count — gold/silver/bronze medals, cards reorder live (ties preserve position)
 - ⏱️ 15-second countdown before auto-start fires, giving players time to retract
-- 🔄 Auto-stop: if resources are insufficient, the highest-profile empty running server is stopped automatically to make room
+- 🔄 Auto-stop: if resources are insufficient, the highest-profile empty running server is stopped automatically to make room — only if no player-occupied server needs to be freed
 - 🔋 Resource budget checker — slot-based memory profile system (`low`/`medium`/`high`) controls which server combinations may run simultaneously
 - 💓 Heartbeat-based active vote filtering — votes only count while the browser tab is open (2-minute grace window)
 - 🔒 Post-start cooldown prevents immediate re-triggering
+- 💬 Live status messages: "lack of resources", "stopping server to free resources", "players online — waiting"
 
 ### Admin dashboard (`/admin`)
 - 📋 Overview of all user-installed add-ons per server with enabled/disabled status
@@ -221,9 +222,9 @@ User-installed packs are stored in folders prefixed with `user_` so they can be 
 
 ## Voting system
 
-Players visit the homepage and vote for which stopped server to start next. The server with the most active votes (from users with an open browser tab) triggers a 15-second countdown. If the resource budget allows, the server starts automatically after the countdown. If not, the system auto-stops the highest-profile empty running server first.
+Players visit the homepage and vote for which stopped server to start next. The server with the most active votes triggers a 15-second countdown. If the resource budget allows starting alongside any currently running servers, it starts automatically. If resources are insufficient but empty running servers exist, those are stopped first to make room. Players on a running server only block a start if their server occupies a slot needed by the candidate — other empty servers can still be stopped freely.
 
-See [`meta.yaml.example`](meta.yaml.example) for configuring resource limits.
+See [`VOTING_DESIGN.md`](VOTING_DESIGN.md) for full details and [`meta.yaml.example`](meta.yaml.example) for configuring resource limits.
 
 ## Updating
 

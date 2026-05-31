@@ -68,7 +68,7 @@ src/
         MinecraftMonitor.php           ← ReactPHP async log streamer, scanner, countdown manager
         WebSocketServer.php            ← Ratchet MessageComponentInterface
     Service/
-        AddonInstaller.php             ← installs .mcaddon/.mcpack files
+        AddonInstaller.php             ← installs .mcaddon/.mcpack files (4 structural cases)
         AddonScanner.php               ← scans behavior_packs/ and resource_packs/ folders
         DependencyChecker.php          ← checks UUID dependencies between packs
         DockerClient.php               ← synchronous curl HTTP client for Docker API
@@ -100,7 +100,7 @@ Managed exclusively via `RedisClient`:
 | Key | Type | TTL | Content |
 |---|---|---|---|
 | `server:{name}` | string (JSON) | 60s | `{name, containerId, containerName, containerStatus, port, startedAt, running, memoryProfile}` |
-| `players:{name}` | string (int) | 60s | player count |
+| `players:{name}` | string (int) | until 2am | player count — event-driven, expires at 2am nightly |
 | `loaded:{name}` | string (JSON) | 60s | array of loaded pack UUIDs |
 | `stats:{name}` | string (JSON) | 60s | `{cpu, memUsageMb, memLimitMb, memPercent}` |
 | `chat` | list | — | last 100 chat messages (JSON) |
@@ -110,6 +110,8 @@ Managed exclusively via `RedisClient`:
 | `vote_cooldown:{name}` | string | 60s | "1" — prevents re-triggering after auto-start |
 | `start_countdown:{name}` | string | 15s | Unix timestamp when countdown began |
 | `stop_countdown:{name}` | string | 15s | Unix timestamp when stop countdown began |
+
+**Player count TTL note:** `players:{name}` uses a dynamic TTL calculated as seconds until 2:00 AM local time (floor 1h, ceiling 25h). Player counts are event-driven via log streaming — the 2am expiry is a safety cleanup for any stale counts that survive a stream failure. Player counts are also explicitly reset to 0 when a server stops.
 
 ---
 
@@ -127,7 +129,18 @@ Starts on the shared loop:
 - On connect: sends full `init` message with all server states + chat history
 - Broadcasts `server_update` on any state change
 - Handles incoming `chat` and `heartbeat` messages
-- WebSocket payload per server includes: `server`, `playerCount`, `loadedUuids`, `stats`, `memoryProfile`, `votes` (count + voters), `countdownUntil`, `stopCountdownUntil`, `blocked`
+- Injects `ResourceBudgetChecker` to compute `blocked` reason per server
+- WebSocket payload per server: `server`, `playerCount`, `loadedUuids`, `stats`, `memoryProfile`, `votes` (count + voters), `countdownUntil`, `stopCountdownUntil`, `blocked`
+
+**`blocked` field values:**
+
+| Value | Meaning |
+|---|---|
+| `null` | No block — can start or has no votes |
+| `players` | A running server has players and occupies a slot needed by the candidate |
+| `players_leaving` | Players left but stop countdown is active on that server |
+| `resources` | Resources blocked, no stop in progress |
+| `resources_stopping` | Resources blocked but a stop countdown is active on another server |
 
 ### MinecraftMonitor
 - **`scan()`** — on startup + every 30s via `addPeriodicTimer`
@@ -135,7 +148,7 @@ Starts on the shared loop:
   - Calls `DockerClient` to find matching container by mount path
   - Writes to Redis via `RedisClient::setServer()`
   - If running and `startedAt` changed → `openLogStream()`
-  - If stopped → clears loaded UUIDs and player count
+  - If stopped → clears loaded UUIDs and resets player count to 0
   - Calls `evaluateCountdown()` after each scan cycle
 
 - **`openLogStream()`**
@@ -145,18 +158,18 @@ Starts on the shared loop:
   - Buffers incomplete lines per server
 
 - **`refreshStats()`** — every 10s via `addPeriodicTimer`
-  - Skips stopped containers (no meaningful stats)
-  - Calls `broadcastServerUpdate` after each stat update
+  - Skips stopped containers (stats API returns incomplete data for stopped containers)
+  - Broadcasts `server_update` after each stat update
 
 - **`evaluateCountdown()`** — called after scan, player join/leave, server stop
   - Calls `VoteManager::checkAndTrigger()` to find start candidate
   - If candidate found → `startCountdown()` (15s ReactPHP timer)
   - If no candidate → calls `evaluateAutoStop()`
-  - `evaluateAutoStop()` calls `VoteManager::getServersToAutoStop()` and starts stop countdowns
+  - `evaluateAutoStop()` calls `VoteManager::getServersToAutoStop()` and starts stop countdowns simultaneously for all returned servers
 
 - **Countdown timers** — two types:
   - Start countdown: fires `fireCountdown()` → validates via `confirmStart()` → calls `restartContainer()`
-  - Stop countdown: fires `fireStopCountdown()` → safety-checks players → calls `stopContainer()` → re-evaluates
+  - Stop countdown: fires `fireStopCountdown()` → safety-checks players haven't joined → calls `stopContainer()` → re-evaluates after 2s delay
 
 ### Log line regexes
 ```php
@@ -173,17 +186,22 @@ Core vote logic service. No ReactPHP dependency — pure Redis reads/writes.
 
 **`checkAndTrigger(): ?string`** — evaluates whether the vote leader can start:
 1. Find stopped server with strictly more active votes than any other stopped server
-2. No players on any running server
-3. No cooldown on leader
-4. `ResourceBudgetChecker::canStart()` passes
-Returns server name or null.
+2. No cooldown on leader
+3. `ResourceBudgetChecker::canStart()` passes → return leader immediately (players on other servers are irrelevant if no slot needs freeing)
+4. If resources blocked → only block if players are on a server that would need to be stopped
 
 **`getServersToAutoStop(): list<string>`** — finds running empty servers to stop for resource freeing:
-1. Simulate stopping candidates (highest profile first)
-2. For each, check `canStartWithProfiles()` with remaining profiles
-3. Return minimal set needed, or empty if not possible
+1. Find the vote leader
+2. If already startable → return empty
+3. Collect running servers with 0 players, sorted highest profile first
+4. Simulate stopping them one by one using `canStartWithProfiles()`
+5. Return minimal set needed, or empty if impossible
 
-**`confirmStart(string): bool`** — re-validates on timer fire (conditions may have changed during 15s).
+**`confirmStart(string): bool`** — re-validates on timer fire.
+
+**`onServerStarted(string): void`** — clears countdown, sets 60s cooldown.
+
+**`onServerAutoStopped(string): void`** — clears stop countdown key.
 
 ---
 
@@ -191,15 +209,29 @@ Returns server name or null.
 
 Slot-based resource checker. Profiles: `low < medium < high`.
 
-Each `resource_limits` entry in `meta.yaml` is a **slot set** — a pool of named slots. A server occupies the lowest available slot at or above its profile level.
+Each `resource_limits` entry in `meta.yaml` is a **slot set**. A server occupies the lowest available slot at or above its profile level.
 
-**Algorithm per slot set:**
-1. Build flat sorted slot list (low→high)
-2. Assign running servers (lowest-fit-first)
-3. Try to assign candidate with remaining slots
-4. Return true if all assignments succeed
+**`canStart(string): bool`** — checks current running servers against all slot sets.
 
-**`canStartWithProfiles(string, array)`** — same as `canStart()` but with explicit running profile list, used for auto-stop simulation.
+**`canStartWithProfiles(string, array): bool`** — same with explicit running profiles list, used for auto-stop simulation.
+
+**`fitsInSlotSet(array, string, array): bool`** — assigns running servers then candidate to slots, returns true if all fit.
+
+---
+
+## AddonInstaller
+
+Handles `.mcaddon` and `.mcpack` files. Both formats are ZIP files. Four structural cases handled in order:
+
+**Case 0** — `.mcaddon` contains `behavior_packs/`, `behavior_pack/`, `resource_packs/`, or `resource_pack/` container folders, each containing pack subfolders with `manifest.json`. Iterates one level deeper.
+
+**Case 1** — `.mcaddon` contains `.mcpack` files directly.
+
+**Case 2** — `.mcaddon` contains pack subfolders directly, each with their own `manifest.json`.
+
+**Case 3** — `.mcaddon` is itself a single pack (`manifest.json` at root).
+
+Cases 1–3 only run if case 0 found nothing. Version checking prevents downgrades. Installed packs are stored in `user_` prefixed folders.
 
 ---
 
@@ -211,7 +243,7 @@ Plain synchronous curl, no Unix socket. Key methods:
 - `restartContainer(id)`
 - `stopContainer(id)`
 - `sendCommand(containerId, command)` — Docker exec API
-- `getContainerStats(containerId)` — calculates CPU% and memory from raw stats
+- `getContainerStats(containerId)` — calculates CPU% and memory from raw stats (all array accesses null-coalesced)
 - `getMemoryProfile(inspectData)` — extracts `MEMORY_PROFILE` env var, defaults to `medium`
 - `resolveHostPath(containerPath)` — inspects self container to map container path → host path
 
@@ -220,11 +252,13 @@ Plain synchronous curl, no Unix socket. Key methods:
 ## Frontend
 
 - **`assets/app.js`** — main JS entry point
-- **WebSocket** (`ws://{host}:8082`) — all live updates pushed from server. `init` on connect, `server_update` on any change. Handles: running/stopped badge, uptime, player count, CPU/memory stats, vote count, voter avatars, vote button state, start countdown bar, stop countdown bar, blocking message, card reordering.
+- **WebSocket** (`ws://{host}:8082`) — all live updates pushed from server. `init` on connect, `server_update` on any change
+- **`applyServerUpdate()`** handles: running/stopped badge, uptime/players visibility, CPU/memory stats, player count, vote count, voter avatars, blocking message, stop countdown bar, start countdown bar, vote action button
+- **`scheduleReorder()`** — 50ms debounce before `reorderCards()`, ensures all burst updates are applied before reordering
+- **`reorderCards()`** — sorts by vote count descending; ties preserve existing DOM order (no movement); early return if order unchanged
 - **Uptime ticker** — runs every 1s, reads `data-last-started-at` from card
-- **Countdown tickers** — runs every 1s, updates start and stop countdown progress bars
-- **Host stats** — polls `/host/stats` every 10s (host memory, not per-container)
-- **Card reordering** — sorts by vote count descending, ties preserve existing DOM order (no movement on tie)
+- **Countdown tickers** — runs every 1s, updates both start (green) and stop (red) countdown progress bars
+- **Host stats** — polls `/host/stats` every 10s (host RAM only, not per-container)
 - **Heartbeat** — sent immediately on WS connect, then every 30s while page is open
 
 No server status polling — all updates are WebSocket push.
@@ -236,7 +270,7 @@ No server status polling — all updates are WebSocket push.
 | Method | Path | Auth | Notes |
 |---|---|---|---|
 | GET | `/` | public | homepage with server status and voting |
-| GET/POST | `/login` | public | form login |
+| GET/POST | `/login` | public | form login (`data-turbo="false"` on form) |
 | GET | `/logout` | — | clears session |
 | GET | `/admin` | ROLE_ADMIN | full dashboard |
 | POST | `/server/{name}/addon/install` | ROLE_ADMIN | |

@@ -185,12 +185,16 @@ function applyServerUpdate(serverName, data) {
     }
 
     // Update running/stopped badge
+    const isStarting = data.starting ?? false;
     if (serverData) {
-        const runningBadge = card.querySelector('.card-header .badge.bg-success, .card-header .badge.bg-danger');
+        const runningBadge = card.querySelector('.card-header .badge.bg-success, .card-header .badge.bg-danger, .card-header .badge.bg-warning');
         if (runningBadge) {
             if (isRunning) {
                 runningBadge.className   = 'badge bg-success';
                 runningBadge.textContent = '● Running';
+            } else if (isStarting) {
+                runningBadge.className   = 'badge bg-warning text-dark';
+                runningBadge.textContent = '⏳ Starting...';
             } else {
                 runningBadge.className   = 'badge bg-danger';
                 runningBadge.textContent = '● Stopped';
@@ -259,14 +263,12 @@ function applyServerUpdate(serverName, data) {
     let blockingBlock  = card.querySelector('.blocking-block');
     const voteSection  = card.querySelector('.vote-section');
 
-    if (blocked && !isRunning && votes.count > 0) {
+    if (blocked && !isRunning && !isStarting && votes.count > 0) {
         const messages = {
-            players:            '👥 Another server has players online. This server will start automatically once they leave.',
-            players_leaving:    '👥 Players have left — waiting for that server to stop before starting this one.',
-            resources:          '⚠️ Lack of resources — waiting for a server to stop.',
-            resources_stopping: '⚠️ Stopping another server to free up resources...',
+            players:   '👥 Another server has players online. This server will start automatically once they leave.',
+            resources: '⚠️ Lack of resources — waiting for servers to stop.',
         };
-        const alertClass = (blocked === 'resources' || blocked === 'resources_stopping') ? 'alert-warning' : 'alert-info';
+        const alertClass = blocked === 'resources' ? 'alert-warning' : 'alert-info';
         const html = `<div class="alert ${alertClass} py-2 mb-3 blocking-block">${messages[blocked] ?? 'Cannot start right now.'}</div>`;
 
         if (blockingBlock) {
@@ -309,7 +311,7 @@ function applyServerUpdate(serverName, data) {
     const countdownUntil = data.countdownUntil ?? null;
     let countdownBlock   = card.querySelector('.countdown-block');
 
-    if (countdownUntil && !isRunning) {
+    if (countdownUntil && !isRunning && !isStarting) {
         if (!countdownBlock) {
             const block = document.createElement('div');
             block.className = 'alert alert-success py-2 mb-3 countdown-block';

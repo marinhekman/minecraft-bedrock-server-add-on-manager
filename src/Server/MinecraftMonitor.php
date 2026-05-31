@@ -113,6 +113,9 @@ class MinecraftMonitor
                 continue;
             }
 
+            // Refresh player count TTL so it doesn't expire between log events
+            $this->redisClient->setPlayerCount($name, $this->playerCounts[$name] ?? 0);
+
             try {
                 $stats = $this->dockerClient->getContainerStats($server['containerId']);
                 $this->redisClient->setStats($name, $stats);
@@ -318,6 +321,7 @@ class MinecraftMonitor
             $this->output->writeln("<info>Auto-starting $serverName</info>");
             $this->dockerClient->restartContainer($containerId);
             $this->voteManager->onServerStarted($serverName);
+            $this->redisClient->setStarting($serverName);
             $this->wsServer->broadcastServerUpdate($serverName);
         } catch (\RuntimeException $e) {
             $this->output->writeln("<error>Failed to start $serverName: {$e->getMessage()}</error>");
@@ -378,6 +382,9 @@ class MinecraftMonitor
 
     private function openLogStream(string $name, array $server): void
     {
+        // Log stream opening confirms the server is running — clear starting state
+        $this->redisClient->clearStarting($name);
+
         $this->packNameIndex[$name] = $this->buildPackNameIndex($name);
         $this->closeLogStream($name);
 

@@ -154,6 +154,7 @@ class WebSocketServer implements MessageComponentInterface
                 ? $countdown + RedisClient::COUNTDOWN_TTL
                 : null,
             'blocked'            => $this->getBlockingReason($name, $server),
+            'starting'           => $this->redisClient->isStarting($name),
         ];
     }
 
@@ -183,6 +184,7 @@ class WebSocketServer implements MessageComponentInterface
      */
     private function getBlockingReason(string $name, ?array $server): ?string
     {
+        // Only relevant for stopped servers with votes
         if ($server['running'] ?? false) {
             return null;
         }
@@ -191,46 +193,34 @@ class WebSocketServer implements MessageComponentInterface
             return null;
         }
 
-        $profile = $server['memoryProfile'] ?? 'medium';
-
-        // Already startable — no block
-        if ($this->budgetChecker->canStart($profile)) {
-            return null;
-        }
-
-        // Check if a stop countdown is already active
+        // Check players on any running server
         $anyStopCountdownActive = false;
         foreach ($this->redisClient->getAllServerNames() as $otherName) {
+            $other = $this->redisClient->getServer($otherName);
+            if (!($other['running'] ?? false)) {
+                continue;
+            }
+
             if ($this->redisClient->getStopCountdown($otherName) !== null) {
                 $anyStopCountdownActive = true;
-                break;
             }
-        }
 
-        if ($anyStopCountdownActive) {
-            return 'resources_stopping';
-        }
-
-        // Can we free enough resources by stopping only empty servers?
-        $toStop = $this->voteManager->getServersToAutoStop();
-
-        if (!empty($toStop)) {
-            // Empty servers can be stopped to free resources — no block needed
-            return null;
-        }
-
-        // getServersToAutoStop returned empty — check why
-        // If there are running servers with players that are occupying needed slots,
-        // that's the real block
-        foreach ($this->redisClient->getAllServerNames() as $otherName) {
-            $other = $this->redisClient->getServer($otherName);
-            if (($other['running'] ?? false) && $this->redisClient->getPlayerCount($otherName) > 0) {
+            if ($this->redisClient->getPlayerCount($otherName) > 0) {
+                // Players online — check if a stop countdown is active for this server
+                // (meaning we're already trying to free it up)
+                if ($this->redisClient->getStopCountdown($otherName) !== null) {
+                    return 'players_leaving';
+                }
                 return 'players';
             }
         }
 
-        // Resources blocked but no players — shouldn't happen if getServersToAutoStop
-        // is working correctly, but return resources as fallback
-        return 'resources';
+        // Check resource budget
+        $profile = $server['memoryProfile'] ?? 'medium';
+        if (!$this->budgetChecker->canStart($profile)) {
+            return $anyStopCountdownActive ? 'resources_stopping' : 'resources';
+        }
+
+        return null;
     }
 }

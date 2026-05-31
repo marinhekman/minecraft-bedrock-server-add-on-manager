@@ -50,34 +50,14 @@ class RedisClient
 
     // ── Player counts ─────────────────────────────────────────────────────────
 
-    /**
-     * Stores the player count with a TTL that expires at 2:00 AM local time.
-     * At 2am there are no players, so stale counts are cleaned up naturally
-     * without needing event-driven resets for every edge case.
-     */
     public function setPlayerCount(string $serverName, int $count): void
     {
-        $this->redis->setex("players:$serverName", $this->secondsUntil2am(), (string) $count);
+        $this->redis->setex("players:$serverName", self::SERVER_TTL, (string) $count);
     }
 
     public function getPlayerCount(string $serverName): int
     {
         return (int) ($this->redis->get("players:$serverName") ?? 0);
-    }
-
-    private function secondsUntil2am(): int
-    {
-        $now  = new \DateTimeImmutable();
-        $next = new \DateTimeImmutable('today 02:00:00');
-
-        if ($now >= $next) {
-            $next = $next->modify('+1 day');
-        }
-
-        $seconds = $next->getTimestamp() - $now->getTimestamp();
-
-        // Safety floor: at least 1 hour, at most 25 hours
-        return max(3600, min($seconds, 90000));
     }
 
     // ── Loaded pack UUIDs ─────────────────────────────────────────────────────
@@ -223,6 +203,28 @@ class RedisClient
             return null;
         }
         return str_replace('start_countdown:', '', $keys[0]);
+    }
+
+    // ── Starting state ───────────────────────────────────────────────────────────
+
+    /**
+     * Marks a server as "starting up" after a start command is issued.
+     * Cleared when the log stream opens (confirming the server is running).
+     * TTL is a safety fallback in case the stream never opens.
+     */
+    public function setStarting(string $serverName): void
+    {
+        $this->redis->setex("starting:$serverName", 60, '1');
+    }
+
+    public function isStarting(string $serverName): bool
+    {
+        return (bool) $this->redis->exists("starting:$serverName");
+    }
+
+    public function clearStarting(string $serverName): void
+    {
+        $this->redis->del(["starting:$serverName"]);
     }
 
     // ── Raw key operations (used by TestStateSeeder) ──────────────────────────
