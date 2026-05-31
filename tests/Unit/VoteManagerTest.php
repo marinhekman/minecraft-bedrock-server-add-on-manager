@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit;
 
-use App\Dev\TestStateSeeder;
 use App\Model\GlobalMeta;
+use App\Model\ServerMeta;
 use App\Security\User;
 use App\Service\GlobalMetaReader;
 use App\Service\RedisClient;
+use App\Service\ResourceBudgetChecker;
 use App\Service\ServerMetaReader;
 use App\Service\VoteManager;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
@@ -22,43 +23,100 @@ use PHPUnit\Framework\TestCase;
  */
 class VoteManagerTest extends TestCase
 {
-    private RedisClient     $redis;
-    private TestStateSeeder $seeder;
-    private VoteManager     $voteManager;
+    private RedisClient  $redis;
+    private VoteManager  $voteManager;
 
     protected function setUp(): void
     {
-        $predis = new \Predis\Client($_ENV['REDIS_URL'] ?? 'redis://127.0.0.1:6379');
-        $this->redis  = new RedisClient($predis);
-        $this->seeder = new TestStateSeeder($this->redis);
-        $this->seeder->reset();
+        $predis      = new \Predis\Client($_ENV['REDIS_URL'] ?? 'redis://127.0.0.1:6379');
+        $this->redis = new RedisClient($predis);
 
-        $globalMeta = new GlobalMeta(heartbeatTtl: 120);
+        $this->flushTestKeys();
+
+        $globalMeta = new GlobalMeta(resourceLimits: [], heartbeatTtl: 120);
 
         $globalMetaReader = $this->createStub(GlobalMetaReader::class);
         $globalMetaReader->method('read')->willReturn($globalMeta);
 
         $serverMetaReader = $this->createStub(ServerMetaReader::class);
-        $serverMetaReader->method('read')->willReturn(new \App\Model\ServerMeta());
+        $serverMetaReader->method('read')->willReturn(new ServerMeta());
+
+        $budgetChecker = new ResourceBudgetChecker($this->redis, $globalMetaReader);
 
         $this->voteManager = new VoteManager(
             redis:            $this->redis,
             globalMetaReader: $globalMetaReader,
             serverMetaReader: $serverMetaReader,
+            budgetChecker:    $budgetChecker,
             mcDataPath:       '/tmp/mc-test',
         );
     }
 
     protected function tearDown(): void
     {
-        $this->seeder->reset();
+        $this->flushTestKeys();
+    }
+
+    private function flushTestKeys(): void
+    {
+        // Clear votes and heartbeats
+        foreach ($this->redis->keys('heartbeat:*') as $key) {
+            $this->redis->del([$key]);
+        }
+        foreach ($this->redis->keys('server:*') as $key) {
+            $this->redis->del([$key]);
+        }
+        foreach ($this->redis->keys('players:*') as $key) {
+            $this->redis->del([$key]);
+        }
+        foreach ($this->redis->keys('vote_cooldown:*') as $key) {
+            $this->redis->del([$key]);
+        }
+        foreach ($this->redis->keys('start_countdown:*') as $key) {
+            $this->redis->del([$key]);
+        }
+        foreach ($this->redis->keys('stop_countdown:*') as $key) {
+            $this->redis->del([$key]);
+        }
+        $this->redis->del(['votes']);
+    }
+
+    // ── helpers ───────────────────────────────────────────────────────────────
+
+    private function seedServer(string $name, bool $running, string $profile = 'medium'): void
+    {
+        $this->redis->setServer($name, [
+            'name'          => $name,
+            'containerId'   => 'fake-' . $name,
+            'running'       => $running,
+            'memoryProfile' => $profile,
+            'startedAt'     => $running ? time() : null,
+        ]);
+    }
+
+    private function seedHeartbeat(string $gamertag): void
+    {
+        $this->redis->setHeartbeat($gamertag);
+    }
+
+    private function seedVote(string $gamertag, string $serverName): void
+    {
+        $this->redis->setVote($gamertag, $serverName);
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    private function makeUser(string $gamertag): User
+    {
+        $user = $this->createStub(User::class);
+        $user->method('getGamertag')->willReturn($gamertag);
+        return $user;
     }
 
     // ── castVote ──────────────────────────────────────────────────────────────
 
     public function testCastVoteStoresVote(): void
     {
-        $this->seeder->seedServer('server1', running: false);
+        $this->seedServer('server1', running: false);
         $user = $this->makeUser('Player1');
 
         $this->voteManager->castVote($user, 'server1');
@@ -69,8 +127,8 @@ class VoteManagerTest extends TestCase
 
     public function testCastVoteToggleRetractsVote(): void
     {
-        $this->seeder->seedServer('server1', running: false);
-        $this->seeder->seedVote('Player1', 'server1');
+        $this->seedServer('server1', running: false);
+        $this->seedVote('Player1', 'server1');
         $user = $this->makeUser('Player1');
 
         $this->voteManager->castVote($user, 'server1');
@@ -81,9 +139,9 @@ class VoteManagerTest extends TestCase
 
     public function testCastVoteMovesVoteToNewServer(): void
     {
-        $this->seeder->seedServer('server1', running: false);
-        $this->seeder->seedServer('server2', running: false);
-        $this->seeder->seedVote('Player1', 'server1');
+        $this->seedServer('server1', running: false);
+        $this->seedServer('server2', running: false);
+        $this->seedVote('Player1', 'server1');
         $user = $this->makeUser('Player1');
 
         $this->voteManager->castVote($user, 'server2');
@@ -96,24 +154,23 @@ class VoteManagerTest extends TestCase
 
     public function testInactiveVotesDontCount(): void
     {
-        $this->seeder->seedServer('server1', running: false);
-        // Votes with no heartbeat — all inactive
-        $this->seeder->seedVote('Player1', 'server1');
-        $this->seeder->seedVote('Player2', 'server1');
-        $this->seeder->seedVote('Player3', 'server1');
+        $this->seedServer('server1', running: false);
+        $this->seedVote('Player1', 'server1');
+        $this->seedVote('Player2', 'server1');
+        $this->seedVote('Player3', 'server1');
+        // No heartbeats — all inactive
 
         $this->assertSame(0, $this->voteManager->getActiveVoteCount('server1'));
     }
 
     public function testActiveVotesCountCorrectly(): void
     {
-        $this->seeder->seedServer('server1', running: false);
-        $this->seeder->seedHeartbeat('Player1');
-        $this->seeder->seedHeartbeat('Player2');
-        $this->seeder->seedVote('Player1', 'server1');
-        $this->seeder->seedVote('Player2', 'server1');
-        // Player3 voted but no heartbeat
-        $this->seeder->seedVote('Player3', 'server1');
+        $this->seedServer('server1', running: false);
+        $this->seedHeartbeat('Player1');
+        $this->seedHeartbeat('Player2');
+        $this->seedVote('Player1', 'server1');
+        $this->seedVote('Player2', 'server1');
+        $this->seedVote('Player3', 'server1'); // no heartbeat — inactive
 
         $this->assertSame(2, $this->voteManager->getActiveVoteCount('server1'));
     }
@@ -122,15 +179,15 @@ class VoteManagerTest extends TestCase
 
     public function testVoteRankingSortsByActiveVotesDescending(): void
     {
-        $this->seeder->seedServer('server1', running: false);
-        $this->seeder->seedServer('server2', running: false);
-        $this->seeder->seedServer('server3', running: false);
-        $this->seeder->seedHeartbeat('Player1');
-        $this->seeder->seedHeartbeat('Player2');
-        $this->seeder->seedHeartbeat('Player3');
-        $this->seeder->seedVote('Player1', 'server2');
-        $this->seeder->seedVote('Player2', 'server2');
-        $this->seeder->seedVote('Player3', 'server3');
+        $this->seedServer('server1', running: false);
+        $this->seedServer('server2', running: false);
+        $this->seedServer('server3', running: false);
+        $this->seedHeartbeat('Player1');
+        $this->seedHeartbeat('Player2');
+        $this->seedHeartbeat('Player3');
+        $this->seedVote('Player1', 'server2');
+        $this->seedVote('Player2', 'server2');
+        $this->seedVote('Player3', 'server3');
 
         $ranking = $this->voteManager->getVoteRanking();
 
@@ -141,12 +198,12 @@ class VoteManagerTest extends TestCase
 
     public function testVoteRankingTiesResolvedAlphabetically(): void
     {
-        $this->seeder->seedServer('server1', running: false);
-        $this->seeder->seedServer('server2', running: false);
-        $this->seeder->seedHeartbeat('Player1');
-        $this->seeder->seedHeartbeat('Player2');
-        $this->seeder->seedVote('Player1', 'server2');
-        $this->seeder->seedVote('Player2', 'server1');
+        $this->seedServer('server1', running: false);
+        $this->seedServer('server2', running: false);
+        $this->seedHeartbeat('Player1');
+        $this->seedHeartbeat('Player2');
+        $this->seedVote('Player1', 'server2');
+        $this->seedVote('Player2', 'server1');
 
         $ranking = $this->voteManager->getVoteRanking();
 
@@ -156,24 +213,86 @@ class VoteManagerTest extends TestCase
 
     public function testVoteRankingIncludesRunningServers(): void
     {
-        $this->seeder->seedServer('server1', running: true);
-        $this->seeder->seedServer('server2', running: false);
+        $this->seedServer('server1', running: true);
+        $this->seedServer('server2', running: false);
 
-        $ranking  = $this->voteManager->getVoteRanking();
-        $names    = array_column($ranking, 'name');
+        $ranking = $this->voteManager->getVoteRanking();
+        $names   = array_column($ranking, 'name');
 
-        // Running servers still appear in ranking (vote button hidden in UI)
         $this->assertContains('server1', $names);
         $this->assertContains('server2', $names);
     }
 
-    // ── helpers ───────────────────────────────────────────────────────────────
+    // ── checkAndTrigger ───────────────────────────────────────────────────────
 
-    #[AllowMockObjectsWithoutExpectations]
-    private function makeUser(string $gamertag): User
+    public function testCheckAndTriggerReturnsLeaderWithMostVotes(): void
     {
-        $user = $this->createStub(User::class);
-        $user->method('getGamertag')->willReturn($gamertag);
-        return $user;
+        $this->seedServer('server1', running: false);
+        $this->seedServer('server2', running: false);
+        $this->seedHeartbeat('Player1');
+        $this->seedHeartbeat('Player2');
+        $this->seedVote('Player1', 'server1');
+        $this->seedVote('Player2', 'server1');
+
+        $this->assertSame('server1', $this->voteManager->checkAndTrigger());
+    }
+
+    public function testCheckAndTriggerReturnsNullOnTie(): void
+    {
+        $this->seedServer('server1', running: false);
+        $this->seedServer('server2', running: false);
+        $this->seedHeartbeat('Player1');
+        $this->seedHeartbeat('Player2');
+        $this->seedVote('Player1', 'server1');
+        $this->seedVote('Player2', 'server2');
+
+        $this->assertNull($this->voteManager->checkAndTrigger());
+    }
+
+    public function testCheckAndTriggerReturnsNullWhenNoVotes(): void
+    {
+        $this->seedServer('server1', running: false);
+
+        $this->assertNull($this->voteManager->checkAndTrigger());
+    }
+
+    public function testCheckAndTriggerReturnsNullWhenCooldownActive(): void
+    {
+        $this->seedServer('server1', running: false);
+        $this->seedHeartbeat('Player1');
+        $this->seedVote('Player1', 'server1');
+        $this->redis->setCooldown('server1', 60);
+
+        $this->assertNull($this->voteManager->checkAndTrigger());
+    }
+
+    public function testCheckAndTriggerAllowsStartWhenResourcesPermit(): void
+    {
+        // No resource limits configured → always allowed
+        $this->seedServer('server1', running: false);
+        $this->seedServer('server2', running: true);
+        $this->seedHeartbeat('Player1');
+        $this->seedVote('Player1', 'server1');
+
+        $this->assertSame('server1', $this->voteManager->checkAndTrigger());
+    }
+
+    // ── getServersToAutoStop ──────────────────────────────────────────────────
+
+    public function testGetServersToAutoStopReturnsEmptyWhenAlreadyStartable(): void
+    {
+        $this->seedServer('server1', running: false);
+        $this->seedHeartbeat('Player1');
+        $this->seedVote('Player1', 'server1');
+
+        $this->assertSame([], $this->voteManager->getServersToAutoStop());
+    }
+
+    public function testGetServersToAutoStopReturnsEmptyWhenNoVotes(): void
+    {
+        $this->seedServer('server1', running: false);
+        $this->seedServer('server2', running: true);
+
+        $this->assertSame([], $this->voteManager->getServersToAutoStop());
     }
 }

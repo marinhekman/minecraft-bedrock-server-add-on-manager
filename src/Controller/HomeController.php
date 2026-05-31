@@ -19,8 +19,7 @@ class HomeController extends AbstractController
         private readonly AddonScanner     $addonScanner,
         private readonly ServerMetaReader $serverMetaReader,
         private readonly VoteManager      $voteManager,
-        private readonly RedisClient      $redis,
-        private readonly ResourceBudgetChecker $budgetChecker
+        private readonly RedisClient      $redis
     ) {}
 
     #[Route('/', name: 'home')]
