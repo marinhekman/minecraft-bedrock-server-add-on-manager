@@ -366,18 +366,43 @@ function applyServerUpdate(serverName, data) {
     card.dataset.voteCount = votes.count;
 }
 
+let reorderPending = false;
+
+function scheduleReorder() {
+    if (reorderPending) return;
+    reorderPending = true;
+    setTimeout(() => {
+        reorderPending = false;
+        reorderCards();
+    }, 50);
+}
+
 function reorderCards() {
     const container = document.getElementById('server-cards');
     if (!container) return;
 
     const cards = Array.from(container.querySelectorAll('.card[data-server]'));
 
+    // Capture current DOM order before sorting — used as tiebreaker
+    // so ties never cause movement (cards only move when strictly outranked).
+    const currentPositions = {};
+    cards.forEach((card, i) => {
+        currentPositions[card.dataset.server] = i;
+    });
+
+    const currentOrder = cards.map(c => c.dataset.server).join(',');
+
     cards.sort((a, b) => {
         const aVotes = parseInt(a.dataset.voteCount || '0');
         const bVotes = parseInt(b.dataset.voteCount || '0');
         if (bVotes !== aVotes) return bVotes - aVotes;
-        return (a.dataset.server || '').localeCompare(b.dataset.server || '');
+        // Tie — preserve existing DOM order, no movement
+        return currentPositions[a.dataset.server] - currentPositions[b.dataset.server];
     });
+
+    // Only touch the DOM if the order actually changed
+    const newOrder = cards.map(c => c.dataset.server).join(',');
+    if (currentOrder === newOrder) return;
 
     const medals       = ['👑', '🥈', '🥉'];
     const medalClasses = ['text-warning fw-bold', 'text-secondary fw-bold', 'text-danger fw-bold'];
@@ -421,13 +446,13 @@ function initWebSocket() {
             Object.entries(msg.servers || {}).forEach(([name, data]) => {
                 applyServerUpdate(name, data);
             });
-            reorderCards();
+            scheduleReorder();
         }
 
         if (msg.type === 'server_update') {
             console.log(`[WS] Processing server_update for: ${msg.server}`);
             applyServerUpdate(msg.server, msg.data);
-            reorderCards();
+            scheduleReorder();
         }
     });
 
