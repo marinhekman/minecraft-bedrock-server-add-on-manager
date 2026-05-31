@@ -77,22 +77,8 @@ class HomeController extends AbstractController
         ]);
     }
 
-    private function getBlockingReason(string $serverName, string $profile): ?string
+    private function getBlockingReason(string $serverName): ?string
     {
-        // reuse ResourceBudgetChecker and RedisClient
-        foreach ($this->serverRegistry->getAll() as $other) {
-            if ($other->name === $serverName || !$other->isRunning()) {
-                continue;
-            }
-            if ($this->redis->getPlayerCount($other->name) > 0) {
-                return 'players';
-            }
-        }
-
-        if (!$this->budgetChecker->canStart($profile)) {
-            return 'resources';
-        }
-
-        return null;
+        return $this->voteManager->getBlockingReason($serverName);
     }
 }

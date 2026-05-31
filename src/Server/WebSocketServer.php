@@ -184,58 +184,6 @@ class WebSocketServer implements MessageComponentInterface
      */
     private function getBlockingReason(string $name, ?array $server): ?string
     {
-        // Only relevant for stopped servers with votes
-        if ($server['running'] ?? false) {
-            return null;
-        }
-
-        if ($this->voteManager->getActiveVoteCount($name) === 0) {
-            return null;
-        }
-
-        $profile = $server['memoryProfile'] ?? 'medium';
-
-        // Already startable — no block
-        if ($this->budgetChecker->canStart($profile)) {
-            return null;
-        }
-
-        // Resources blocked — check stop countdown state first
-        $anyStopCountdownActive = false;
-        foreach ($this->redisClient->getAllServerNames() as $otherName) {
-            if ($this->redisClient->getStopCountdown($otherName) !== null) {
-                $anyStopCountdownActive = true;
-                break;
-            }
-        }
-
-        if ($anyStopCountdownActive) {
-            return 'resources_stopping';
-        }
-
-        // No stop countdown active — check if any running server with 0 players
-        // could be stopped to free resources. If so, the system will handle it
-        // and no block message is needed.
-        foreach ($this->redisClient->getAllServerNames() as $otherName) {
-            $other = $this->redisClient->getServer($otherName);
-            if (!($other['running'] ?? false)) {
-                continue;
-            }
-            if ($this->redisClient->getPlayerCount($otherName) === 0) {
-                // There is a stoppable empty server — no message, system handles it
-                return null;
-            }
-        }
-
-        // Every running server has players — they are genuinely blocking
-        // (no empty server can be freed to make room)
-        foreach ($this->redisClient->getAllServerNames() as $otherName) {
-            $other = $this->redisClient->getServer($otherName);
-            if (($other['running'] ?? false) && $this->redisClient->getPlayerCount($otherName) > 0) {
-                return 'players';
-            }
-        }
-
-        return 'resources';
+        return $this->voteManager->getBlockingReason($name);
     }
 }

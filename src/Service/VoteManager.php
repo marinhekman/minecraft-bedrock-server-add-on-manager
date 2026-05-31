@@ -287,4 +287,55 @@ final class VoteManager
             ? '/avatars/' . $username . '.png'
             : '/images/avatar_default.png';
     }
+
+    /**
+     * Returns the blocking reason for a stopped server that has votes but cannot start.
+     * Used by both HomeController (page render) and WebSocketServer (WebSocket payload)
+     * to ensure consistent messaging.
+     */
+    public function getBlockingReason(string $serverName): ?string
+    {
+        $data = $this->redis->getServer($serverName);
+        if ($data === null || ($data['running'] ?? false)) {
+            return null;
+        }
+
+        if ($this->getActiveVoteCount($serverName) === 0) {
+            return null;
+        }
+
+        $profile = $data['memoryProfile'] ?? 'medium';
+
+        if ($this->budgetChecker->canStart($profile)) {
+            return null;
+        }
+
+        // Check if stop countdown already active
+        foreach ($this->redis->getAllServerNames() as $otherName) {
+            if ($this->redis->getStopCountdown($otherName) !== null) {
+                return 'resources_stopping';
+            }
+        }
+
+        // Check if any running server with 0 players can be stopped
+        foreach ($this->redis->getAllServerNames() as $otherName) {
+            $other = $this->redis->getServer($otherName);
+            if (!($other['running'] ?? false)) {
+                continue;
+            }
+            if ($this->redis->getPlayerCount($otherName) === 0) {
+                return null; // System will handle it
+            }
+        }
+
+        // All running servers have players
+        foreach ($this->redis->getAllServerNames() as $otherName) {
+            $other = $this->redis->getServer($otherName);
+            if (($other['running'] ?? false) && $this->redis->getPlayerCount($otherName) > 0) {
+                return 'players';
+            }
+        }
+
+        return 'resources';
+    }
 }
