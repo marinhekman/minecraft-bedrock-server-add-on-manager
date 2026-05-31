@@ -213,15 +213,22 @@ class WebSocketServer implements MessageComponentInterface
             return 'resources_stopping';
         }
 
-        // No stop countdown active — check if players are blocking the needed slot
-        // by seeing if getServersToAutoStop returns empty due to player-occupied servers
-        $toStop = $this->voteManager->getServersToAutoStop();
-        if (!empty($toStop)) {
-            // Empty servers available to stop — system will handle it, no block message needed
-            return null;
+        // No stop countdown active — check if any running server with 0 players
+        // could be stopped to free resources. If so, the system will handle it
+        // and no block message is needed.
+        foreach ($this->redisClient->getAllServerNames() as $otherName) {
+            $other = $this->redisClient->getServer($otherName);
+            if (!($other['running'] ?? false)) {
+                continue;
+            }
+            if ($this->redisClient->getPlayerCount($otherName) === 0) {
+                // There is a stoppable empty server — no message, system handles it
+                return null;
+            }
         }
 
-        // Cannot free resources — check if players are the reason
+        // Every running server has players — they are genuinely blocking
+        // (no empty server can be freed to make room)
         foreach ($this->redisClient->getAllServerNames() as $otherName) {
             $other = $this->redisClient->getServer($otherName);
             if (($other['running'] ?? false) && $this->redisClient->getPlayerCount($otherName) > 0) {
