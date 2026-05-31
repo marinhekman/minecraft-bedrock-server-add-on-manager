@@ -310,25 +310,43 @@ final class VoteManager
             return null;
         }
 
-        // Check if stop countdown already active
+        // Check if a stop countdown is already active on any server
+        $anyStopCountdownActive = false;
         foreach ($this->redis->getAllServerNames() as $otherName) {
             if ($this->redis->getStopCountdown($otherName) !== null) {
-                return 'resources_stopping';
+                $anyStopCountdownActive = true;
+                break;
             }
         }
 
-        // Check if any running server with 0 players can be stopped
+        if ($anyStopCountdownActive) {
+            // If another running server still has players, show players_leaving
+            // (stop is in progress but we're still waiting for resources to free up)
+            foreach ($this->redis->getAllServerNames() as $otherName) {
+                $other = $this->redis->getServer($otherName);
+                if (($other['running'] ?? false) && $this->redis->getPlayerCount($otherName) > 0) {
+                    return 'players_leaving';
+                }
+            }
+            return 'resources_stopping';
+        }
+
+        // Check if any running server with 0 players can still be stopped
+        // (exclude servers already being stopped via stop countdown)
         foreach ($this->redis->getAllServerNames() as $otherName) {
             $other = $this->redis->getServer($otherName);
             if (!($other['running'] ?? false)) {
                 continue;
             }
+            if ($this->redis->getStopCountdown($otherName) !== null) {
+                continue; // already being stopped — not a new candidate
+            }
             if ($this->redis->getPlayerCount($otherName) === 0) {
-                return null; // System will handle it
+                return null; // system will handle it, no message needed
             }
         }
 
-        // All running servers have players
+        // No stoppable empty servers remain — check if players are the reason
         foreach ($this->redis->getAllServerNames() as $otherName) {
             $other = $this->redis->getServer($otherName);
             if (($other['running'] ?? false) && $this->redis->getPlayerCount($otherName) > 0) {
