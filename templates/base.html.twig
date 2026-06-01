@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ app.request.locale }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -25,17 +25,24 @@
     <nav class="navbar navbar-dark bg-dark mb-4">
         <div class="container d-flex align-items-center justify-content-between">
             <a href="{{ path('home') }}" class="navbar-brand fw-bold text-decoration-none">🧱 {{ app_title|raw }}</a>
-            {% if app.user %}
-                <div class="d-flex align-items-center gap-2">
+            <div class="d-flex align-items-center gap-2">
+                {% if app.user %}
                     <img src="{{ app.user.avatarPath }}"
                          alt="{{ app.user.gamertag }}"
                          class="rounded-circle"
                          style="width:32px;height:32px;object-fit:cover"
                          title="{{ app.user.gamertag }}">
                     <span class="text-white-50 small">{{ app.user.gamertag }}</span>
-                    <a href="{{ path('logout') }}" class="btn btn-sm btn-outline-light">Logout</a>
+                    <a href="{{ path('logout') }}" class="btn btn-sm btn-outline-light">{{ 'Logout'|trans }}</a>
+                {% endif %}
+                {# Language switcher #}
+                <div class="d-flex gap-1">
+                    <a href="{{ path('set_locale', {locale: 'nl'}) }}"
+                       class="btn btn-sm {{ app.request.locale == 'nl' ? 'btn-light' : 'btn-outline-light' }}">🇳🇱</a>
+                    <a href="{{ path('set_locale', {locale: 'en'}) }}"
+                       class="btn btn-sm {{ app.request.locale == 'en' ? 'btn-light' : 'btn-outline-light' }}">🇬🇧</a>
                 </div>
-            {% endif %}
+            </div>
         </div>
     </nav>
     {% endblock %}

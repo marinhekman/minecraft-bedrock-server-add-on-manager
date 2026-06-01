@@ -1,6 +1,6 @@
 {% extends 'base.html.twig' %}
 
-{% block title %}Login — MC Server Manager{% endblock %}
+{% block title %}{{ 'Login'|trans }} — MC Server Manager{% endblock %}
 
 {% block body %}
 <div class="container py-5">
@@ -21,7 +21,7 @@
 
                     <form method="post" action="{{ path('login') }}" data-turbo="false">
                         <div class="mb-3">
-                            <label for="username" class="form-label">Username</label>
+                            <label for="username" class="form-label">{{ 'Username'|trans }}</label>
                             <input type="text"
                                    class="form-control"
                                    id="username"
@@ -32,7 +32,7 @@
                                    autofocus>
                         </div>
                         <div class="mb-3">
-                            <label for="password" class="form-label">Password</label>
+                            <label for="password" class="form-label">{{ 'Password'|trans }}</label>
                             <input type="password"
                                    class="form-control"
                                    id="password"
@@ -42,7 +42,7 @@
                         </div>
                         <input type="hidden" name="_csrf_token" value="{{ csrf_token('authenticate') }}">
                         <div class="d-grid">
-                            <button type="submit" class="btn btn-primary">Login</button>
+                            <button type="submit" class="btn btn-primary">{{ 'Login'|trans }}</button>
                         </div>
                     </form>
 
@@ -50,7 +50,7 @@
             </div>
 
             <div class="text-center mt-3">
-                <a href="{{ path('home') }}" class="text-muted small">← Back to homepage</a>
+                <a href="{{ path('home') }}" class="text-muted small">{{ '← Back to homepage'|trans }}</a>
             </div>
 
         </div>

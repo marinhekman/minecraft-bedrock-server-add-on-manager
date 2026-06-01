@@ -191,13 +191,13 @@ function applyServerUpdate(serverName, data) {
         if (runningBadge) {
             if (isRunning) {
                 runningBadge.className   = 'badge bg-success';
-                runningBadge.textContent = '● Running';
+                runningBadge.textContent = window.i18n?.running  ?? '● Running';
             } else if (isStarting) {
                 runningBadge.className   = 'badge bg-warning text-dark';
-                runningBadge.textContent = '⏳ Starting...';
+                runningBadge.textContent = window.i18n?.starting ?? '⏳ Starting...';
             } else {
                 runningBadge.className   = 'badge bg-danger';
-                runningBadge.textContent = '● Stopped';
+                runningBadge.textContent = window.i18n?.stopped  ?? '● Stopped';
             }
         }
 
@@ -233,8 +233,11 @@ function applyServerUpdate(serverName, data) {
     // Update vote count text
     const countText = card.querySelector('.vote-count-text');
     if (countText) {
-        const n = votes.count;
-        countText.textContent = `${n} vote${n !== 1 ? 's' : ''}`;
+        const n        = votes.count;
+        const voteWord = n !== 1
+            ? (window.i18n?.votes ?? 'votes')
+            : (window.i18n?.vote  ?? 'vote');
+        countText.textContent = `${n} ${voteWord}`;
     }
 
     // Update voter avatars
@@ -264,11 +267,12 @@ function applyServerUpdate(serverName, data) {
     const voteSection  = card.querySelector('.vote-section');
 
     if (blocked && !isRunning && !isStarting && votes.count > 0) {
+        const i18n     = window.i18n || {};
         const messages = {
-            players:            '👥 Another server has players online. This server will start automatically once they leave.',
-            players_leaving:    '👥 Players have left — waiting for that server to stop before starting this one.',
-            resources:          '⚠️ Lack of resources — waiting for a server to stop.',
-            resources_stopping: '⚠️ Stopping another server to free up resources...',
+            players:            i18n.players            ?? '👥 Another server has players online. This server will start automatically once they leave.',
+            players_leaving:    i18n.players_leaving    ?? '👥 Players have left — waiting for that server to stop before starting this one.',
+            resources:          i18n.resources          ?? '⚠️ Lack of resources — waiting for a server to stop.',
+            resources_stopping: i18n.resources_stopping ?? '⚠️ Stopping another server to free up resources...',
         };
         const alertClass = (blocked === 'resources' || blocked === 'resources_stopping') ? 'alert-warning' : 'alert-info';
         const html = `<div class="alert ${alertClass} py-2 mb-3 blocking-block">${messages[blocked] ?? 'Cannot start right now.'}</div>`;
@@ -293,8 +297,8 @@ function applyServerUpdate(serverName, data) {
             block.dataset.stopCountdownUntil = stopCountdownUntil;
             block.innerHTML = `
                 <div class="d-flex justify-content-between align-items-center mb-1">
-                    <span>🔴 <strong>Stopping in <span class="stop-countdown-seconds">–</span>s</strong></span>
-                    <small class="text-muted">Freeing resources for voted server</small>
+                    <span><strong>${(window.i18n && window.i18n.stopping_in) || '🔴 Stopping in'} <span class="stop-countdown-seconds">–</span>s</strong></span>
+                    <small class="text-muted">${(window.i18n && window.i18n.freeing_resources) || 'Freeing resources for voted server'}</small>
                 </div>
                 <div class="progress" style="height:6px">
                     <div class="progress-bar bg-danger stop-countdown-progress" role="progressbar" style="width:100%"></div>
@@ -320,8 +324,8 @@ function applyServerUpdate(serverName, data) {
             block.dataset.countdownUntil = countdownUntil;
             block.innerHTML = `
                 <div class="d-flex justify-content-between align-items-center mb-1">
-                    <span>🚀 <strong>Starting in <span class="countdown-seconds">–</span>s</strong></span>
-                    <small class="text-muted">Retract your vote to cancel</small>
+                    <span><strong>${(window.i18n && window.i18n.starting_in) || '🚀 Starting in'} <span class="countdown-seconds">–</span>s</strong></span>
+                    <small class="text-muted">${(window.i18n && window.i18n.retract_to_cancel) || 'Retract your vote to cancel'}</small>
                 </div>
                 <div class="progress" style="height:6px">
                     <div class="progress-bar bg-success countdown-progress" role="progressbar" style="width:100%"></div>
@@ -357,14 +361,16 @@ function applyServerUpdate(serverName, data) {
         const csrfToken    = card.dataset.csrfToken ?? '';
 
         if (myGamertag) {
-            const label    = userHasVoted ? '✓ Voted — click to retract' : 'Vote to start';
+            const label    = userHasVoted
+                ? (window.i18n?.voted_click_retract ?? '✓ Voted — click to retract')
+                : (window.i18n?.vote_to_start       ?? 'Vote to start');
             const btnClass = userHasVoted ? 'btn-success' : 'btn-outline-primary';
             voteAction.innerHTML = `<form method="post" action="/server/${serverName}/vote" class="vote-form">
                 <input type="hidden" name="_token" value="${csrfToken}">
                 <button type="submit" class="btn btn-sm ${btnClass}">${label}</button>
             </form>`;
         } else {
-            voteAction.innerHTML = `<span class="text-muted small">Log in to vote</span>`;
+            voteAction.innerHTML = `<span class="text-muted small">${window.i18n?.log_in_to_vote ?? 'Log in to vote'}</span>`;
         }
     }
 

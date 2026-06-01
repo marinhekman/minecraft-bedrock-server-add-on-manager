@@ -27,19 +27,26 @@
                 {% endif %}
                 <span class="text-muted small">{{ app.user.gamertag }}</span>
                 {% if is_granted('ROLE_ADMIN') %}
-                    <a href="{{ path('admin_dashboard') }}" class="btn btn-sm btn-outline-primary">Admin Dashboard</a>
+                    <a href="{{ path('admin_dashboard') }}" class="btn btn-sm btn-outline-primary">{{ 'Admin Dashboard'|trans }}</a>
                 {% endif %}
-                <a href="{{ path('logout') }}" class="btn btn-sm btn-outline-secondary">Logout</a>
+                <a href="{{ path('logout') }}" class="btn btn-sm btn-outline-secondary">{{ 'Logout'|trans }}</a>
             {% else %}
-                <span class="badge bg-secondary">👤 Anonymous</span>
-                <a href="{{ path('login') }}" class="btn btn-sm btn-primary">Login</a>
+                <span class="badge bg-secondary">👤 {{ 'Anonymous'|trans }}</span>
+                <a href="{{ path('login') }}" class="btn btn-sm btn-primary">{{ 'Login'|trans }}</a>
             {% endif %}
+            {# Language switcher #}
+            <div class="d-flex gap-1">
+                <a href="{{ path('set_locale', {locale: 'nl'}) }}"
+                   class="btn btn-sm {{ app.request.locale == 'nl' ? 'btn-secondary' : 'btn-outline-secondary' }}">🇳🇱</a>
+                <a href="{{ path('set_locale', {locale: 'en'}) }}"
+                   class="btn btn-sm {{ app.request.locale == 'en' ? 'btn-secondary' : 'btn-outline-secondary' }}">🇬🇧</a>
+            </div>
         </div>
     </div>
 
     {# Server cards #}
     {% if serverData is empty %}
-        <div class="alert alert-warning">No servers found.</div>
+        <div class="alert alert-warning">{{ 'No servers found.'|trans }}</div>
     {% else %}
         <div id="server-cards">
         {% for data in serverData %}
@@ -79,13 +86,13 @@
                             <span class="badge bg-secondary">:{{ server.port }}</span>
                         {% endif %}
                         {% if server.isRunning %}
-                            <span class="badge bg-success">● Running</span>
+                            <span class="badge bg-success">{{ '● Running'|trans }}</span>
                         {% else %}
-                            <span class="badge bg-danger">● Stopped</span>
+                            <span class="badge bg-danger">{{ '● Stopped'|trans }}</span>
                         {% endif %}
-                        <span class="badge bg-dark stat-uptime" title="Uptime"
+                        <span class="badge bg-dark stat-uptime" title="{{ 'Uptime'|trans }}"
                               style="{{ server.isRunning ? '' : 'display:none' }}">UP –</span>
-                        <span class="badge bg-primary stat-players" title="Online players"
+                        <span class="badge bg-primary stat-players" title="{{ 'Online players'|trans }}"
                               style="{{ server.isRunning ? '' : 'display:none' }}">👥 –</span>
                     </div>
                 </div>
@@ -112,9 +119,9 @@
                         <table class="table table-sm table-hover mb-3">
                             <thead class="table-dark">
                                 <tr>
-                                    <th>Add-on</th>
-                                    <th>Type</th>
-                                    <th>Version</th>
+                                    <th>{{ 'Add-on'|trans }}</th>
+                                    <th>{{ 'Type'|trans }}</th>
+                                    <th>{{ 'Version'|trans }}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -123,13 +130,13 @@
                                         <td>{{ pack.manifest.name }}</td>
                                         <td>
                                             {% if pack.manifest.type.value == 'resources' %}
-                                                Resource 🎨
+                                                {{ 'Resource 🎨'|trans }}
                                             {% elseif pack.manifest.type.value == 'data' and pack.manifest.hasScriptModule %}
-                                                Behaviour 🔧 📜
+                                                {{ 'Behaviour 🔧 📜'|trans }}
                                             {% elseif pack.manifest.type.value == 'data' %}
-                                                Behaviour 🔧
+                                                {{ 'Behaviour 🔧'|trans }}
                                             {% else %}
-                                                Behaviour 📜
+                                                {{ 'Behaviour 📜'|trans }}
                                             {% endif %}
                                         </td>
                                         <td><code>{{ pack.manifest.versionString }}</code></td>
@@ -143,11 +150,11 @@
                     {% if not server.isRunning and data.voteCount > 0 and data.blocked is not null %}
                         {% if data.blocked == 'players' %}
                             <div class="alert alert-info py-2 mb-3 blocking-block">
-                                👥 Another server has players online. This server will start automatically once they leave.
+                                {{ '👥 Another server has players online. This server will start automatically once they leave.'|trans }}
                             </div>
                         {% elseif data.blocked == 'resources' %}
                             <div class="alert alert-warning py-2 mb-3 blocking-block">
-                                ⚠️ Not enough resources to start this server right now. Waiting for a running server to stop.
+                                {{ '⚠️ Lack of resources — waiting for a server to stop.'|trans }}
                             </div>
                         {% endif %}
                     {% endif %}
@@ -171,11 +178,11 @@
                                     {% endif %}
                                 </div>
                                 <span class="text-muted small vote-count-text">
-                                    {{ data.voteCount }} vote{{ data.voteCount != 1 ? 's' : '' }}
+                                    {{ data.voteCount }} {{ data.voteCount != 1 ? 'votes'|trans : 'vote'|trans }}
                                 </span>
                             </div>
 
-                            {# Right side: running indicator or vote button #}
+                            {# Right side: vote action — always visible #}
                             <div class="vote-action">
                                 {% if is_granted('ROLE_USER') or is_granted('ROLE_ADMIN') %}
                                     <form method="post"
@@ -184,16 +191,16 @@
                                         <input type="hidden" name="_token" value="{{ csrf_token('vote-' ~ server.name) }}">
                                         {% if data.userHasVoted %}
                                             <button type="submit" class="btn btn-sm btn-success">
-                                                ✓ Voted — click to retract
+                                                {{ '✓ Voted — click to retract'|trans }}
                                             </button>
                                         {% else %}
                                             <button type="submit" class="btn btn-sm btn-outline-primary">
-                                                Vote to start
+                                                {{ 'Vote to start'|trans }}
                                             </button>
                                         {% endif %}
                                     </form>
                                 {% else %}
-                                    <span class="text-muted small">Log in to vote</span>
+                                    <span class="text-muted small">{{ 'Log in to vote'|trans }}</span>
                                 {% endif %}
                             </div>
 
@@ -209,8 +216,26 @@
 </div>
 
 <script>
-    window.myGamertag = {{ myGamertag ? (myGamertag|json_encode)|raw : 'null' }};
-    window.wsUrl = "{{ ws_scheme }}://{{ ws_host }}:{{ ws_port }}{{ ws_uri }}";
+    window.myGamertag  = {{ myGamertag ? (myGamertag|json_encode)|raw : 'null' }};
+    window.wsUrl       = "{{ ws_scheme }}://{{ ws_host }}:{{ ws_port }}{{ ws_uri }}";
     window.countdownTtl = {{ constant('App\\Service\\RedisClient::COUNTDOWN_TTL') }};
+    window.i18n = {
+        players:            {{ '👥 Another server has players online. This server will start automatically once they leave.'|trans|json_encode|raw }},
+        players_leaving:    {{ '👥 Players have left — waiting for that server to stop before starting this one.'|trans|json_encode|raw }},
+        resources:          {{ '⚠️ Lack of resources — waiting for a server to stop.'|trans|json_encode|raw }},
+        resources_stopping: {{ '⚠️ Stopping another server to free up resources...'|trans|json_encode|raw }},
+        starting_in:        {{ '🚀 Starting in'|trans|json_encode|raw }},
+        retract_to_cancel:  {{ 'Retract your vote to cancel'|trans|json_encode|raw }},
+        stopping_in:        {{ '🔴 Stopping in'|trans|json_encode|raw }},
+        freeing_resources:  {{ 'Freeing resources for voted server'|trans|json_encode|raw }},
+        vote_to_start:      {{ 'Vote to start'|trans|json_encode|raw }},
+        voted_click_retract:{{ '✓ Voted — click to retract'|trans|json_encode|raw }},
+        log_in_to_vote:     {{ 'Log in to vote'|trans|json_encode|raw }},
+        running:            {{ '● Running'|trans|json_encode|raw }},
+        stopped:            {{ '● Stopped'|trans|json_encode|raw }},
+        starting:           {{ '⏳ Starting...'|trans|json_encode|raw }},
+        vote:               {{ 'vote'|trans|json_encode|raw }},
+        votes:              {{ 'votes'|trans|json_encode|raw }},
+    };
 </script>
 {% endblock %}

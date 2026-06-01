@@ -1,0 +1,42 @@
+# ── Navigation / base ─────────────────────────────────────────────────────────
+Logout: Uitloggen
+Login: Inloggen
+Admin Dashboard: Beheerdersdashboard
+'← Back to homepage': '← Terug naar de homepage'
+'Minecraft Bedrock Add-on Manager': 'Minecraft Bedrock Add-on Manager'
+Anonymous: Anoniem
+
+# ── Home page ─────────────────────────────────────────────────────────────────
+'No servers found.': 'Geen servers gevonden.'
+'● Running': '● Actief'
+'● Stopped': '● Gestopt'
+'⏳ Starting...': '⏳ Wordt gestart...'
+'Online players': 'Spelers online'
+Uptime: Uptime
+'Add-on': 'Add-on'
+Type: Type
+Version: Versie
+'UP': 'AAN'
+
+# ── Voting ────────────────────────────────────────────────────────────────────
+'Vote to start': 'Stem om te starten'
+'✓ Voted — click to retract': '✓ Gestemd — klik om in te trekken'
+'Log in to vote': 'Log in om te stemmen'
+vote: stem
+votes: stemmen
+
+# ── Blocking messages (also used in app.js via window.i18n) ───────────────────
+'👥 Another server has players online. This server will start automatically once they leave.': '👥 Een andere server heeft spelers online. Deze server start automatisch zodra zij vertrekken.'
+'⚠️ Lack of resources — waiting for a server to stop.': '⚠️ Onvoldoende resources — wachten tot een server stopt.'
+'⚠️ Stopping another server to free up resources...': '⚠️ Een andere server wordt gestopt om resources vrij te maken...'
+'👥 Players have left — waiting for that server to stop before starting this one.': '👥 Spelers hebben de server verlaten — wachten tot die server stopt voordat deze gestart wordt.'
+
+# ── Countdown bars ────────────────────────────────────────────────────────────
+'🚀 Starting in': '🚀 Start over'
+'Retract your vote to cancel': 'Trek je stem in om te annuleren'
+'🔴 Stopping in': '🔴 Stopt over'
+'Freeing resources for voted server': 'Resources vrijmaken voor de gekozen server'
+
+# ── Login page ────────────────────────────────────────────────────────────────
+Username: Gebruikersnaam
+Password: Wachtwoord
