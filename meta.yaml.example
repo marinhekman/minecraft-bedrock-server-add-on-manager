@@ -1,0 +1,31 @@
+# ─────────────────────────────────────────────────────────────
+# Minecraft Bedrock Server Manager — global configuration
+# Copy to ~/mc-server-manager-data/meta.yaml before starting.
+# ─────────────────────────────────────────────────────────────
+
+# Resource limits — defines which combinations of servers may run simultaneously.
+# Each entry is one valid combination. A server can start if the currently running
+# servers plus the candidate fit within at least one combination.
+#
+# Memory profiles are declared per-server container via -e MEMORY_PROFILE=low|medium|high
+# in mc-server-manager-start.sh. Default if absent: medium.
+#
+# Examples with the config below:
+#   Nothing running       + start high   → ✅ fits [high: 1, low: 1]
+#   Nothing running       + start medium → ✅ fits [medium: 2]
+#   high running          + start low    → ✅ fits [high: 1, low: 1]
+#   high running          + start medium → ❌ no match
+#   medium running        + start medium → ✅ fits [medium: 2]
+#   medium running        + start high   → ❌ no match
+#   medium + low running  + start any    → ❌ no match
+resource_limits:
+    - high: 1
+      low: 1
+    - medium: 2
+
+# Seconds a user's vote stays active after they close the browser.
+# The client sends a heartbeat every 30 seconds while the page is open.
+# If no heartbeat is received within this window, the vote stops counting
+# toward the displayed total (but is remembered if the user returns).
+# Default: 120 seconds (2 minutes).
+heartbeat_ttl: 120

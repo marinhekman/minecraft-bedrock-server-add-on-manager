@@ -1,0 +1,5 @@
+# Fake player join
+docker exec mc-server bash -c 'echo "[INFO] Player connected: TestPlayer, xuid: 123456789" > /proc/1/fd/1'
+
+# Fake player leave
+docker exec mc-server bash -c 'echo "[INFO] Player disconnected: TestPlayer, xuid: 123456789" > /proc/1/fd/1'

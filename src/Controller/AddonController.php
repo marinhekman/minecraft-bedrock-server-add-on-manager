@@ -29,13 +29,13 @@ class AddonController extends AbstractController
         $server = $this->serverRegistry->get($serverName);
         if ($server === null) {
             $this->addFlash('error', sprintf('Server "%s" not found.', $serverName));
-            return $this->redirectToRoute('dashboard');
+            return $this->redirectToRoute('admin_dashboard');
         }
 
         $file = $request->files->get('addon_file');
         if ($file === null) {
             $this->addFlash('error', 'No file was uploaded.');
-            return $this->redirectToRoute('dashboard');
+            return $this->redirectToRoute('admin_dashboard');
         }
 
         try {
@@ -60,7 +60,7 @@ class AddonController extends AbstractController
             $this->addFlash('error', $e->getMessage());
         }
 
-        return $this->redirectToRoute('dashboard');
+        return $this->redirectToRoute('admin_dashboard');
     }
 
     #[Route('/{uuid}/enable', name: 'addon_enable', methods: ['POST'])]
@@ -69,13 +69,13 @@ class AddonController extends AbstractController
         $server = $this->serverRegistry->get($serverName);
         if ($server === null) {
             $this->addFlash('error', sprintf('Server "%s" not found.', $serverName));
-            return $this->redirectToRoute('dashboard');
+            return $this->redirectToRoute('admin_dashboard');
         }
 
         $pack = $this->findPack($server, $uuid);
         if ($pack === null) {
             $this->addFlash('error', sprintf('Add-on "%s" not found.', $uuid));
-            return $this->redirectToRoute('dashboard');
+            return $this->redirectToRoute('admin_dashboard');
         }
 
         $this->worldPacksManager->enable(
@@ -87,7 +87,7 @@ class AddonController extends AbstractController
 
         $this->addFlash('success', sprintf('"%s" has been enabled.', $pack->manifest->name));
 
-        return $this->redirectToRoute('dashboard');
+        return $this->redirectToRoute('admin_dashboard');
     }
 
     #[Route('/{uuid}/disable', name: 'addon_disable', methods: ['POST'])]
@@ -96,13 +96,13 @@ class AddonController extends AbstractController
         $server = $this->serverRegistry->get($serverName);
         if ($server === null) {
             $this->addFlash('error', sprintf('Server "%s" not found.', $serverName));
-            return $this->redirectToRoute('dashboard');
+            return $this->redirectToRoute('admin_dashboard');
         }
 
         $pack = $this->findPack($server, $uuid);
         if ($pack === null) {
             $this->addFlash('error', sprintf('Add-on "%s" not found.', $uuid));
-            return $this->redirectToRoute('dashboard');
+            return $this->redirectToRoute('admin_dashboard');
         }
 
         $this->worldPacksManager->disable(
@@ -113,7 +113,7 @@ class AddonController extends AbstractController
 
         $this->addFlash('success', sprintf('"%s" has been disabled.', $pack->manifest->name));
 
-        return $this->redirectToRoute('dashboard');
+        return $this->redirectToRoute('admin_dashboard');
     }
 
     #[Route('/{uuid}/delete', name: 'addon_delete', methods: ['POST'])]
@@ -122,13 +122,13 @@ class AddonController extends AbstractController
         $server = $this->serverRegistry->get($serverName);
         if ($server === null) {
             $this->addFlash('error', sprintf('Server "%s" not found.', $serverName));
-            return $this->redirectToRoute('dashboard');
+            return $this->redirectToRoute('admin_dashboard');
         }
 
         $pack = $this->findPack($server, $uuid);
         if ($pack === null) {
             $this->addFlash('error', sprintf('Add-on "%s" not found.', $uuid));
-            return $this->redirectToRoute('dashboard');
+            return $this->redirectToRoute('admin_dashboard');
         }
 
         // Disable first to clean up world_*_packs.json
@@ -139,7 +139,7 @@ class AddonController extends AbstractController
 
         $this->addFlash('success', sprintf('"%s" has been removed.', $pack->manifest->name));
 
-        return $this->redirectToRoute('dashboard');
+        return $this->redirectToRoute('admin_dashboard');
     }
 
     private function findPack(\App\Model\ServerInstance $server, string $uuid): ?\App\Model\AddonPack

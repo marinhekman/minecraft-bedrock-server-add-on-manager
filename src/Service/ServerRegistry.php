@@ -6,6 +6,8 @@ use App\Model\ServerInstance;
 
 /**
  * Reads server state from Redis (populated by the WebSocket/Monitor process).
+ * Falls back to filesystem scanning if Redis is empty (e.g. after a reset or
+ * before the monitor has run).
  */
 class ServerRegistry
 {
@@ -16,12 +18,26 @@ class ServerRegistry
     /** @return ServerInstance[] */
     public function getAll(): array
     {
-        $instances = [];
+        $names = $this->redisClient->getAllServerNames();
 
-        foreach ($this->redisClient->getAllServerNames() as $name) {
+        // Fall back to filesystem scan if Redis is empty so the homepage
+        // never shows "No servers found" due to wiped or expired keys.
+        if (empty($names)) {
+            $names = $this->scanFilesystem();
+        }
+
+        $instances = [];
+        foreach ($names as $name) {
             $instance = $this->buildInstance($name);
             if ($instance !== null) {
                 $instances[] = $instance;
+            } else {
+                // Redis has no data for this name (filesystem fallback) —
+                // build a minimal offline instance so the card still renders.
+                $instances[] = new ServerInstance(
+                    name:     $name,
+                    dataPath: '/mc-data/' . $name,
+                );
             }
         }
 
@@ -50,6 +66,34 @@ class ServerRegistry
             containerStatus: $data['containerStatus'] ?? null,
             port:            $data['port'] ?? null,
             startedAt:       $data['startedAt'] ?? null,
+            memoryProfile:   $data['memoryProfile'] ?? 'medium',
         );
+    }
+
+    /**
+     * Scans /mc-data/ for server data folders as a fallback when Redis is empty.
+     *
+     * @return string[]
+     */
+    private function scanFilesystem(): array
+    {
+        $names  = [];
+        $mcData = '/mc-data';
+
+        if (!is_dir($mcData)) {
+            return $names;
+        }
+
+        foreach (new \DirectoryIterator($mcData) as $entry) {
+            if (!$entry->isDir() || $entry->isDot()) {
+                continue;
+            }
+            $path = $entry->getPathname();
+            if (is_dir($path . '/worlds') || file_exists($path . '/server.properties')) {
+                $names[] = $entry->getFilename();
+            }
+        }
+
+        return $names;
     }
 }

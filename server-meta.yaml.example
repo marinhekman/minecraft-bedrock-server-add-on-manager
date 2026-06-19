@@ -1,0 +1,14 @@
+# ─────────────────────────────────────────────────────────────
+# Per-server metadata and vote overrides
+# Place at: ~/minecraft-data/mc-server-manager/meta.yaml
+# ─────────────────────────────────────────────────────────────
+
+# Display name shown on the homepage (falls back to folder name if absent)
+display_name: "My Creative World"
+
+# Short description shown under the server image
+description: "Our main survival world for the gang."
+
+# Override the global heartbeat_ttl for this server only (optional).
+# Useful if you want votes on a specific server to persist longer or shorter.
+# heartbeat_ttl: 300

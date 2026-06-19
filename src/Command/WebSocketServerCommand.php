@@ -34,25 +34,20 @@ class WebSocketServerCommand extends Command
 
         $output->writeln('<info>Starting WebSocket server on port ' . self::WS_PORT . '</info>');
 
-        // WebSocket server for browser clients
-        $server = IoServer::factory(
+        // Wire WebSocket server onto the shared ReactPHP loop
+        $socket = new \React\Socket\SocketServer('0.0.0.0:' . self::WS_PORT, [], $loop);
+        $server = new IoServer(
             new HttpServer(new WsServer($this->wsServer)),
-            self::WS_PORT,
-            '0.0.0.0',
-            $loop
+            $socket,
+            $loop,
         );
 
-        // Pass output to monitor (needed for writeln)
         $this->monitor->setOutput($output);
         $this->wsServer->setOutput($output);
 
-        // Initial scan + start log streams
         $this->monitor->start();
 
-        // Re-scan for new/removed servers every 30 seconds
         $loop->addPeriodicTimer(30, fn() => $this->monitor->scan());
-
-        // Refresh container stats every 10 seconds
         $loop->addPeriodicTimer(10, fn() => $this->monitor->refreshStats());
 
         $loop->run();

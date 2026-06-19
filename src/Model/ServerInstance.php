@@ -12,6 +12,7 @@ class ServerInstance
         public readonly ?string $containerStatus = null,
         public readonly ?int    $port            = null,
         public readonly ?int    $startedAt       = null,
+        public readonly string  $memoryProfile   = 'medium',
     ) {}
 
     public function isRunning(): bool

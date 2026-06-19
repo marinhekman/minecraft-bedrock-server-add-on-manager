@@ -27,42 +27,73 @@
                 {% endif %}
                 <span class="text-muted small">{{ app.user.gamertag }}</span>
                 {% if is_granted('ROLE_ADMIN') %}
-                    <a href="{{ path('admin_dashboard') }}" class="btn btn-sm btn-outline-primary">Admin Dashboard</a>
+                    <a href="{{ path('admin_dashboard') }}" class="btn btn-sm btn-outline-primary">{{ 'Admin Dashboard'|trans }}</a>
                 {% endif %}
-                <a href="{{ path('logout') }}" class="btn btn-sm btn-outline-secondary">Logout</a>
+                <a href="{{ path('logout') }}" class="btn btn-sm btn-outline-secondary">{{ 'Logout'|trans }}</a>
             {% else %}
-                <span class="badge bg-secondary">👤 Anonymous</span>
-                <a href="{{ path('login') }}" class="btn btn-sm btn-primary">Login</a>
+                <span class="badge bg-secondary">👤 {{ 'Anonymous'|trans }}</span>
+                <a href="{{ path('login') }}" class="btn btn-sm btn-primary">{{ 'Login'|trans }}</a>
             {% endif %}
+            {# Language switcher #}
+            <div class="d-flex gap-1">
+                <a href="{{ path('set_locale', {locale: 'nl'}) }}"
+                   class="btn btn-sm {{ app.request.locale == 'nl' ? 'btn-secondary' : 'btn-outline-secondary' }}">🇳🇱</a>
+                <a href="{{ path('set_locale', {locale: 'en'}) }}"
+                   class="btn btn-sm {{ app.request.locale == 'en' ? 'btn-secondary' : 'btn-outline-secondary' }}">🇬🇧</a>
+            </div>
         </div>
     </div>
 
     {# Server cards #}
     {% if serverData is empty %}
-        <div class="alert alert-warning">
-            No servers found.
-        </div>
+        <div class="alert alert-warning">{{ 'No servers found.'|trans }}</div>
     {% else %}
+        <div id="server-cards">
         {% for data in serverData %}
             {% set server = data.server %}
-            {% set meta = data.meta %}
-            <div class="card shadow-sm mb-4"
-                 data-server="{{ server.name }}"
-                 data-status-url="{{ path('server_status', {serverName: server.name}) }}">
+            {% set meta   = data.meta %}
 
+            {# Medal for position #}
+            {% if loop.index == 1 %}
+                {% set medal = '👑' %}
+                {% set medalClass = 'text-warning fw-bold' %}
+                {% set cardBg = 'card-gold' %}
+            {% elseif loop.index == 2 %}
+                {% set medal = '🥈' %}
+                {% set medalClass = 'text-secondary fw-bold' %}
+                {% set cardBg = 'card-silver' %}
+            {% elseif loop.index == 3 %}
+                {% set medal = '🥉' %}
+                {% set medalClass = 'text-danger fw-bold' %}
+                {% set cardBg = 'card-bronze' %}
+            {% else %}
+                {% set medal = '#' ~ loop.index %}
+                {% set medalClass = 'text-muted' %}
+                {% set cardBg = '' %}
+            {% endif %}
+
+            <div class="card shadow-sm mb-4 {{ cardBg }}"
+                 data-server="{{ server.name }}"
+                 data-vote-count="{{ data.voteCount }}"
+                 data-csrf-token="{{ csrf_token('vote-' ~ server.name) }}">
+
+                {# Card header #}
                 <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
                     <div class="d-flex align-items-center gap-2">
+                        <span class="{{ medalClass }}" title="Position #{{ loop.index }}">{{ medal }}</span>
                         <h2 class="h5 mb-0">🖥️ {{ meta.getDisplayName(server.name) }}</h2>
                         {% if server.port %}
                             <span class="badge bg-secondary">:{{ server.port }}</span>
                         {% endif %}
                         {% if server.isRunning %}
-                            <span class="badge bg-success">● Running</span>
-                            <span class="badge bg-dark stat-uptime" title="Uptime">UP –</span>
-                            <span class="badge bg-primary stat-players" title="Online players">👥 –</span>
+                            <span class="badge bg-success">{{ '● Running'|trans }}</span>
                         {% else %}
-                            <span class="badge bg-danger">● Stopped</span>
+                            <span class="badge bg-danger">{{ '● Stopped'|trans }}</span>
                         {% endif %}
+                        <span class="badge bg-dark stat-uptime" title="{{ 'Uptime'|trans }}"
+                              style="{{ server.isRunning ? '' : 'display:none' }}">UP –</span>
+                        <span class="badge bg-primary stat-players" title="{{ 'Online players'|trans }}"
+                              style="{{ server.isRunning ? '' : 'display:none' }}">👥 –</span>
                     </div>
                 </div>
 
@@ -75,7 +106,7 @@
                             <img src="{{ path('server_image', {serverName: server.name}) }}"
                                  alt="{{ meta.getDisplayName(server.name) }}"
                                  class="rounded"
-                                 style="width:120px;height:120px;object-fit:cover;flex-shrink:0">
+                                 style="width:auto;height:120px;object-fit:cover;flex-shrink:0">
                         {% endif %}
                         {% if meta.description %}
                             <p class="text-muted mb-0">{{ meta.description }}</p>
@@ -84,15 +115,13 @@
                     {% endif %}
 
                     {# Enabled add-ons #}
-                    {% if data.enabledPacks is empty %}
-                        <p class="text-muted mb-0 small">No add-ons enabled.</p>
-                    {% else %}
-                        <table class="table table-sm table-hover mb-0">
+                    {% if data.enabledPacks is not empty %}
+                        <table class="table table-sm table-hover mb-3">
                             <thead class="table-dark">
                                 <tr>
-                                    <th>Add-on</th>
-                                    <th>Type</th>
-                                    <th>Version</th>
+                                    <th>{{ 'Add-on'|trans }}</th>
+                                    <th>{{ 'Type'|trans }}</th>
+                                    <th>{{ 'Version'|trans }}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -101,13 +130,13 @@
                                         <td>{{ pack.manifest.name }}</td>
                                         <td>
                                             {% if pack.manifest.type.value == 'resources' %}
-                                                Resource 🎨
+                                                {{ 'Resource 🎨'|trans }}
                                             {% elseif pack.manifest.type.value == 'data' and pack.manifest.hasScriptModule %}
-                                                Behaviour 🔧 📜
+                                                {{ 'Behaviour 🔧 📜'|trans }}
                                             {% elseif pack.manifest.type.value == 'data' %}
-                                                Behaviour 🔧
+                                                {{ 'Behaviour 🔧'|trans }}
                                             {% else %}
-                                                Behaviour 📜
+                                                {{ 'Behaviour 📜'|trans }}
                                             {% endif %}
                                         </td>
                                         <td><code>{{ pack.manifest.versionString }}</code></td>
@@ -117,10 +146,96 @@
                         </table>
                     {% endif %}
 
+                    {# Blocking message — shown when server has votes but can't start #}
+                    {% if not server.isRunning and data.voteCount > 0 and data.blocked is not null %}
+                        {% if data.blocked == 'players' %}
+                            <div class="alert alert-info py-2 mb-3 blocking-block">
+                                {{ '👥 Another server has players online. This server will start automatically once they leave.'|trans }}
+                            </div>
+                        {% elseif data.blocked == 'resources' %}
+                            <div class="alert alert-warning py-2 mb-3 blocking-block">
+                                {{ '⚠️ Lack of resources — waiting for a server to stop.'|trans }}
+                            </div>
+                        {% endif %}
+                    {% endif %}
+
+                    {# Vote section #}
+                    <div class="border-top pt-3 vote-section">
+                        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+
+                            {# Left side: avatars + vote count — always visible #}
+                            <div class="d-flex align-items-center gap-2">
+                                <div class="d-flex vote-avatars">
+                                    {% for voter in data.voters|slice(0, 5) %}
+                                        <img src="{{ voter.avatarPath }}"
+                                             alt="{{ voter.gamertag }}"
+                                             title="{{ voter.gamertag }}"
+                                             class="rounded-circle border border-white"
+                                             style="width:32px;height:32px;object-fit:cover;margin-left:{{ loop.first ? '0' : '-8px' }}">
+                                    {% endfor %}
+                                    {% if data.voters|length > 5 %}
+                                        <span class="badge bg-secondary ms-1 align-self-center">+{{ data.voters|length - 5 }}</span>
+                                    {% endif %}
+                                </div>
+                                <span class="text-muted small vote-count-text">
+                                    {{ data.voteCount }} {{ data.voteCount != 1 ? 'votes'|trans : 'vote'|trans }}
+                                </span>
+                            </div>
+
+                            {# Right side: vote action — always visible #}
+                            <div class="vote-action">
+                                {% if is_granted('ROLE_USER') or is_granted('ROLE_ADMIN') %}
+                                    <form method="post"
+                                          action="{{ path('server_vote', {serverName: server.name}) }}"
+                                          class="vote-form">
+                                        <input type="hidden" name="_token" value="{{ csrf_token('vote-' ~ server.name) }}">
+                                        {% if data.userHasVoted %}
+                                            <button type="submit" class="btn btn-sm btn-success">
+                                                {{ '✓ Voted — click to retract'|trans }}
+                                            </button>
+                                        {% else %}
+                                            <button type="submit" class="btn btn-sm btn-outline-primary">
+                                                {{ 'Vote to start'|trans }}
+                                            </button>
+                                        {% endif %}
+                                    </form>
+                                {% else %}
+                                    <span class="text-muted small">{{ 'Log in to vote'|trans }}</span>
+                                {% endif %}
+                            </div>
+
+                        </div>
+                    </div>
+
                 </div>
             </div>
         {% endfor %}
+        </div>
     {% endif %}
 
 </div>
+
+<script>
+    window.myGamertag  = {{ myGamertag ? (myGamertag|json_encode)|raw : 'null' }};
+    window.wsUrl       = "{{ ws_scheme }}://{{ ws_host }}:{{ ws_port }}{{ ws_uri }}";
+    window.countdownTtl = {{ constant('App\\Service\\RedisClient::COUNTDOWN_TTL') }};
+    window.i18n = {
+        players:            {{ '👥 Another server has players online. This server will start automatically once they leave.'|trans|json_encode|raw }},
+        players_leaving:    {{ '👥 Players have left — waiting for that server to stop before starting this one.'|trans|json_encode|raw }},
+        resources:          {{ '⚠️ Lack of resources — waiting for a server to stop.'|trans|json_encode|raw }},
+        resources_stopping: {{ '⚠️ Stopping another server to free up resources...'|trans|json_encode|raw }},
+        starting_in:        {{ '🚀 Starting in'|trans|json_encode|raw }},
+        retract_to_cancel:  {{ 'Retract your vote to cancel'|trans|json_encode|raw }},
+        stopping_in:        {{ '🔴 Stopping in'|trans|json_encode|raw }},
+        freeing_resources:  {{ 'Freeing resources for voted server'|trans|json_encode|raw }},
+        vote_to_start:      {{ 'Vote to start'|trans|json_encode|raw }},
+        voted_click_retract:{{ '✓ Voted — click to retract'|trans|json_encode|raw }},
+        log_in_to_vote:     {{ 'Log in to vote'|trans|json_encode|raw }},
+        running:            {{ '● Running'|trans|json_encode|raw }},
+        stopped:            {{ '● Stopped'|trans|json_encode|raw }},
+        starting:           {{ '⏳ Starting...'|trans|json_encode|raw }},
+        vote:               {{ 'vote'|trans|json_encode|raw }},
+        votes:              {{ 'votes'|trans|json_encode|raw }},
+    };
+</script>
 {% endblock %}

@@ -16,9 +16,10 @@ if ! docker ps --filter "name=mc-docker-api" --filter "status=running" -q | grep
         --name mc-docker-api \
         --network mc-net \
         --restart unless-stopped \
-        -p 2375:2375 \
         -v /var/run/docker.sock:/var/run/docker.sock \
-        docker-hub.mspchallenge.info/cradlewebmaster/docker-api:latest
+        -p 2375:2375 \
+        alpine/socat \
+        tcp-listen:2375,fork,reuseaddr unix-connect:/var/run/docker.sock
 fi
 
 # Ensure Redis is running on the network
@@ -76,8 +77,10 @@ docker run -d \
   --network mc-net \
   --restart unless-stopped \
   --env-file .env \
+  --add-host=host.docker.internal:host-gateway \
   "${VOLUMES[@]}" \
   -p 8080:80 \
+  -p 8082:8082 \
   minecraft-bedrock-server-add-on-manager
 
 echo ""

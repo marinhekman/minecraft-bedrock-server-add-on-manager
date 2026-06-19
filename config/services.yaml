@@ -23,3 +23,6 @@ services:
     App\:
         resource: '../src/'
 
+    App\EventSubscriber\LocaleSubscriber:
+        arguments:
+            $defaultLocale: '%kernel.default_locale%'

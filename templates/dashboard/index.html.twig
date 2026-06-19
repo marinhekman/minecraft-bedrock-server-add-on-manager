@@ -28,8 +28,7 @@
         {% for data in serverData %}
             {% set server = data.server %}
             <div class="card shadow-sm mb-4"
-                data-server="{{ server.name }}"
-                data-status-url="{{ path('server_status', {serverName: server.name}) }}">
+                data-server="{{ server.name }}">
 
                 <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
                     <div class="d-flex align-items-center gap-2">
@@ -54,9 +53,19 @@
                     </div>
                     <div class="d-flex gap-2">
                         {% if server.containerId %}
-                            <form method="post" action="{{ path('server_restart', {serverName: server.name}) }}">
-                                <button type="submit" class="btn btn-sm btn-warning">🔄 Restart server</button>
-                            </form>
+                            {% if server.isRunning %}
+                                <form method="post" action="{{ path('server_restart', {serverName: server.name}) }}">
+                                    <button type="submit" class="btn btn-sm btn-warning">🔄 Restart server</button>
+                                </form>
+                                <form method="post" action="{{ path('server_stop', {serverName: server.name}) }}"
+                                      onsubmit="return confirm('Stop {{ server.containerName ?? server.name }}?')">
+                                    <button type="submit" class="btn btn-sm btn-danger">⏹ Stop</button>
+                                </form>
+                            {% else %}
+                                <form method="post" action="{{ path('server_restart', {serverName: server.name}) }}">
+                                    <button type="submit" class="btn btn-sm btn-success">▶ Start server</button>
+                                </form>
+                            {% endif %}
                         {% endif %}
                         <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#installModal{{ server.name }}">⬆️ Install add-on</button>
                     </div>
