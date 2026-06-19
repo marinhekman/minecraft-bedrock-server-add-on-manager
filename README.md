@@ -53,7 +53,8 @@ A web-based dashboard for managing add-ons (behaviour packs and resource packs) 
 
 ## Screenshot
 
-![Minecraft Bedrock Add-on Manager dashboard](screenshot.png "Minecraft Bedrock Add-on Manager dashboard")
+![Minecraft Bedrock Add-on Manager homepage](screenshot-homepage.png "Minecraft Bedrock Add-on Manager homepage")
+![Minecraft Bedrock Add-on Manager dashboard](screenshot-admin.png "Minecraft Bedrock Add-on Manager dashboard")
 
 ## Prerequisites
 
