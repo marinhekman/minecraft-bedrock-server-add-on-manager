@@ -82,6 +82,7 @@ RUN set -eux; \
 	composer dump-env prod; \
 	composer run-script --no-dev post-install-cmd; \
 	if [ -f importmap.php ]; then \
+		php bin/console importmap:install; \
 		php bin/console asset-map:compile; \
 	fi; \
 	chmod +x bin/console; sync;
