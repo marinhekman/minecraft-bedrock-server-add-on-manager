@@ -78,6 +78,7 @@ COPY --link --exclude=frankenphp/ . ./
 RUN set -eux; \
 	mkdir -p var/cache var/log var/share; \
 	composer dump-autoload --classmap-authoritative; \
+	cp .env.example .env; \
 	composer dump-env prod; \
 	composer run-script --no-dev post-install-cmd; \
 	if [ -f importmap.php ]; then \
