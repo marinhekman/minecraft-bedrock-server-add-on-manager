@@ -1,6 +1,6 @@
 # 🧱 Minecraft Bedrock Add-on Manager
 
-A web-based dashboard for managing add-ons (behaviour packs and resource packs) on your [itzg/minecraft-bedrock-server](https://github.com/itzg/docker-minecraft-bedrock-server) instances, with a public-facing server status page, player voting system, and user authentication.
+A web-based dashboard for managing add-ons (behaviour packs and resource packs) on your [itzg/minecraft-bedrock-server](https://github.com/itzg/docker-minecraft-bedrock-server) instances, with a public homepage, user authentication, live server status, and an admin interface for uploads, toggling and maintenance.
 
 ![PHP](https://img.shields.io/badge/PHP-8.4-blue)
 ![Symfony](https://img.shields.io/badge/Symfony-7.4-black)
@@ -168,17 +168,38 @@ The script automatically starts all required containers (`mc-docker-api`, `mc-re
 The dashboard is available at [http://localhost:8080](http://localhost:8080).
 The WebSocket server runs on port 8082.
 
-### 6. Create user passwords
+### 6. Password management
+
+You can still generate a password hash manually:
 
 ```bash
 docker exec -it mc-server-manager php bin/console security:hash-password
 ```
 
-To reset all passwords at once:
+For day-to-day password management, the project also includes helper scripts in the repository root:
+
+#### Set passwords interactively for existing users
+
+```bash
+bash set-passwords.sh
+```
+
+- Prompts for each username found in `~/mc-server-manager-data/users.yaml`
+- Lets you skip individual users by leaving the password blank
+- Confirms each password before updating `users.yaml`
+- Uses the `mc-server-manager` container to generate Symfony password hashes
+
+#### Reset passwords for all existing users
 
 ```bash
 bash reset-passwords.sh
 ```
+
+- Generates a random password for every username found in `~/mc-server-manager-data/users.yaml`
+- Prints the generated password for each user to the terminal
+- Updates `users.yaml` with freshly hashed passwords
+
+> **Important:** These scripts only manage passwords for users that already exist in `users.yaml`. They do **not** create new user accounts. Create the user entries manually first, then use these scripts to set or reset passwords.
 
 ## Folder structure on host
 
@@ -213,7 +234,7 @@ The manager mounts each Minecraft server's `minecraft-data` folder and reads/wri
 - `mc-server-manager/meta.yaml` — reads display name, description and per-server overrides
 - `mc-server-manager/image.png` — reads server image
 
-It connects to the Docker API (via `mc-docker-api` container) to automatically match each mounted data folder to its running container, retrieve port and status information, send restart/stop signals, and stream container logs in real time to determine which packs were loaded and how many players are online.
+It connects to the Docker API (via `mc-docker-api` container) to automatically match each mounted data folder to its running container, retrieve port and status information, send restart/stop signals, and stream recent logs for pack load detection.
 
 The WebSocket server (`app:websocket-server`, managed by Supervisor) pushes all live updates to connected browsers — no polling required.
 
@@ -223,7 +244,7 @@ User-installed packs are stored in folders prefixed with `user_` so they can be 
 
 ## Voting system
 
-Players visit the homepage and vote for which stopped server to start next. The server with the most active votes triggers a 15-second countdown. If the resource budget allows starting alongside any currently running servers, it starts automatically. If resources are insufficient but empty running servers exist, those are stopped first to make room. Players on a running server only block a start if their server occupies a slot needed by the candidate — other empty servers can still be stopped freely.
+Players visit the homepage and vote for which stopped server to start next. The server with the most active votes triggers a 15-second countdown. If the resource budget allows starting alongside the currently running servers, it starts automatically. Otherwise the app may stop an empty running server first to free resources.
 
 See [`VOTING_DESIGN.md`](VOTING_DESIGN.md) for full details and [`meta.yaml.example`](meta.yaml.example) for configuring resource limits.
 
