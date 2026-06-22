@@ -36,15 +36,51 @@ function updateHostStats() {
     fetch('/host/stats')
         .then(r => r.json())
         .then(data => {
-            const text = document.getElementById('hostMemText');
-            const bar  = document.getElementById('hostMemBar');
-            if (!text || !bar || data.error) return;
-            text.textContent = `${data.usedMb} MB / ${data.totalMb} MB (${data.usedPercent}%)`;
-            bar.style.width  = data.usedPercent + '%';
-            bar.className    = 'progress-bar ' + (
-                data.usedPercent > 90 ? 'bg-danger' :
-                data.usedPercent > 70 ? 'bg-warning' : 'bg-info'
-            );
+            // Memory stats
+            const memText = document.getElementById('hostMemText');
+            const memBar  = document.getElementById('hostMemBar');
+            if (memText && memBar && !data.error) {
+                memText.textContent = `${data.usedMb} MB / ${data.totalMb} MB (${data.usedPercent}%)`;
+                memBar.style.width  = data.usedPercent + '%';
+                memBar.className    = 'progress-bar ' + (
+                    data.usedPercent > 90 ? 'bg-danger' :
+                    data.usedPercent > 70 ? 'bg-warning' : 'bg-info'
+                );
+            }
+
+            // Disk stats
+            const diskText = document.getElementById('hostDiskText');
+            const diskBar  = document.getElementById('hostDiskBar');
+            const diskWarning = document.getElementById('hostDiskWarning');
+            const newServerBtn = document.getElementById('newServerBtn');
+            const createServerBtn = document.getElementById('createServerBtn');
+
+            if (diskText && diskBar && !data.error) {
+                diskText.textContent = `${data.diskUsedGb} GB / ${data.diskTotalGb} GB (${data.diskAvailGb} GB free)`;
+                diskBar.style.width  = data.diskUsedPercent + '%';
+                diskBar.className    = 'progress-bar ' + (
+                    data.diskUsedPercent > 90 ? 'bg-danger' :
+                    data.diskUsedPercent > 70 ? 'bg-warning' : 'bg-success'
+                );
+
+                // Show/hide warning based on absolute free space threshold
+                const isAboveThreshold = !data.canCreateServer;
+                const minFreeEl = document.getElementById('hostDiskMinFree');
+                if (minFreeEl) minFreeEl.textContent = data.minFreeDiskGb;
+
+                if (diskWarning) {
+                    diskWarning.classList.toggle('d-none', !isAboveThreshold);
+                }
+                if (newServerBtn) {
+                    newServerBtn.disabled = isAboveThreshold;
+                    newServerBtn.title = isAboveThreshold
+                        ? `Less than ${data.minFreeDiskGb} GB free — cannot create new server`
+                        : 'Create new server';
+                }
+                if (createServerBtn) {
+                    createServerBtn.disabled = isAboveThreshold;
+                }
+            }
         })
         .catch(() => {});
 }
@@ -175,19 +211,15 @@ function applyServerUpdate(serverName, data) {
         return;
     }
 
-    const votes      = data.votes;
+    const votes      = data.votes ?? { count: 0, voters: [] };
     const serverData = data.server;
     const isRunning  = serverData && serverData.running;
-
-    if (!votes) {
-        console.warn(`[WS] No votes data for server: ${serverName}`);
-        return;
-    }
 
     // Update running/stopped badge
     const isStarting = data.starting ?? false;
     if (serverData) {
-        const runningBadge = card.querySelector('.card-header .badge.bg-success, .card-header .badge.bg-danger, .card-header .badge.bg-warning');
+        const runningBadge = card.querySelector('.server-status-badge')
+            || card.querySelector('.card-header .badge.bg-success, .card-header .badge.bg-danger, .card-header .badge.bg-warning');
         if (runningBadge) {
             if (isRunning) {
                 runningBadge.className   = 'badge bg-success';
@@ -199,12 +231,39 @@ function applyServerUpdate(serverName, data) {
                 runningBadge.className   = 'badge bg-danger';
                 runningBadge.textContent = window.i18n?.stopped  ?? '● Stopped';
             }
+
+            if (!runningBadge.classList.contains('server-status-badge')) {
+                runningBadge.classList.add('server-status-badge');
+            }
         }
 
-        const uptimeBadge  = card.querySelector('.stat-uptime');
-        const playersBadge = card.querySelector('.stat-players');
+        const uptimeBadge   = card.querySelector('.stat-uptime');
+        const cpuBadge      = card.querySelector('.stat-cpu');
+        const memBadge      = card.querySelector('.stat-mem');
+        const playersBadge  = card.querySelector('.stat-players');
+        const stopForm      = card.querySelector('.server-stop-form');
+        const startBtn      = card.querySelector('.server-start-btn');
+
         if (uptimeBadge)  uptimeBadge.style.display  = isRunning ? '' : 'none';
+        if (cpuBadge)     cpuBadge.style.display     = isRunning ? '' : 'none';
+        if (memBadge)     memBadge.style.display     = isRunning ? '' : 'none';
         if (playersBadge) playersBadge.style.display = isRunning ? '' : 'none';
+        if (stopForm)     stopForm.style.display     = isRunning ? '' : 'none';
+
+        if (startBtn) {
+            const startLabel   = startBtn.dataset.labelStart || '▶ Start server';
+            const restartLabel = startBtn.dataset.labelRestart || '🔄 Restart server';
+
+            if (isRunning) {
+                startBtn.classList.remove('btn-success');
+                startBtn.classList.add('btn-warning');
+                startBtn.textContent = restartLabel;
+            } else {
+                startBtn.classList.remove('btn-warning');
+                startBtn.classList.add('btn-success');
+                startBtn.textContent = startLabel;
+            }
+        }
 
         if (serverData.startedAt) {
             card.dataset.lastStartedAt = serverData.startedAt;

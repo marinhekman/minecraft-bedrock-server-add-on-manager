@@ -1,6 +1,16 @@
 #!/bin/bash
 export MSYS_NO_PATHCONV=1
 
+IMAGE_NAME="minecraft-bedrock-server-add-on-manager"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Run from the repo/script directory so Docker commands can use relative paths.
+# This avoids Git Bash absolute path issues like /d/... when MSYS path conversion is disabled.
+cd "$SCRIPT_DIR" || {
+    echo "Error: Failed to change directory to $SCRIPT_DIR"
+    exit 1
+}
+
 # Clean-up any existing manager container
 docker stop mc-server-manager 2>/dev/null || true
 docker rm mc-server-manager 2>/dev/null || true
@@ -12,14 +22,20 @@ docker network create mc-net 2>/dev/null || true
 if ! docker ps --filter "name=mc-docker-api" --filter "status=running" -q | grep -q .; then
     docker stop mc-docker-api 2>/dev/null || true
     docker rm mc-docker-api 2>/dev/null || true
+
+    # Build local image if not present
+    if ! docker image inspect mc-docker-api >/dev/null 2>&1; then
+        echo "Building mc-docker-api image..."
+        docker build -t mc-docker-api ./api
+    fi
+
     docker run -d \
         --name mc-docker-api \
         --network mc-net \
         --restart unless-stopped \
         -v /var/run/docker.sock:/var/run/docker.sock \
         -p 2375:2375 \
-        alpine/socat \
-        tcp-listen:2375,fork,reuseaddr unix-connect:/var/run/docker.sock
+        mc-docker-api
 fi
 
 # Ensure Redis is running on the network
@@ -36,6 +52,11 @@ fi
 # Build volume args array
 VOLUMES=()
 VOLUMES+=(-v /proc/meminfo:/proc/meminfo:ro)
+
+# Single mount containing all server folders (server1, server2, ...)
+SERVERS_ROOT="$HOME/mc-servers"
+mkdir -p "$SERVERS_ROOT"
+VOLUMES+=(-v "$SERVERS_ROOT:/mc-data")
 VOLUMES+=(-v "$HOME/mc-server-manager-data:/mc-data/config:ro")
 
 # Convenience: mount avatars to public folder for web serving
@@ -43,36 +64,22 @@ if [ -d "$HOME/mc-server-manager-data/avatars" ]; then
     VOLUMES+=(-v "$HOME/mc-server-manager-data/avatars:/app/public/avatars:ro")
 fi
 
-# Add minecraft-data (no number) first
-SERVER_COUNT=0
-if [ -d "$HOME/minecraft-data" ]; then
-    VOLUMES+=(-v "$HOME/minecraft-data:/mc-data/server1")
-    SERVER_COUNT=$((SERVER_COUNT + 1))
-fi
-
-# Add minecraft-data2, minecraft-data3, etc.
-for dir in "$HOME"/minecraft-data[0-9]*; do
-    if [ -d "$dir" ]; then
-        name=$(basename "$dir")
-        num=${name#minecraft-data}
-        VOLUMES+=(-v "$dir:/mc-data/server$num")
-        SERVER_COUNT=$((SERVER_COUNT + 1))
-    fi
-done
-
-# Require at least one server folder
-if [ "$SERVER_COUNT" -eq 0 ]; then
-    echo "Error: No minecraft-data folders found in $HOME."
-    echo "Please create at least one folder (e.g. $HOME/minecraft-data) before starting the manager."
-    exit 1
-fi
-
-echo "Found $SERVER_COUNT server folder(s)."
+SERVER_COUNT=$(find "$SERVERS_ROOT" -maxdepth 1 -type d -name 'server*' | wc -l | tr -d ' ')
+echo "Found $SERVER_COUNT server folder(s) in $SERVERS_ROOT."
 echo "Starting mc-server-manager with volumes:"
 for v in "${VOLUMES[@]}"; do echo "  $v"; done
 echo ""
 
-docker run -d \
+# Ensure manager image exists locally
+if ! docker image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
+    echo "Image '$IMAGE_NAME' not found locally. Building it now..."
+    if ! docker build -t "$IMAGE_NAME" .; then
+        echo "Error: Failed to build '$IMAGE_NAME'."
+        exit 1
+    fi
+fi
+
+if ! CID=$(docker run -d \
   --name mc-server-manager \
   --network mc-net \
   --restart unless-stopped \
@@ -81,9 +88,12 @@ docker run -d \
   "${VOLUMES[@]}" \
   -p 8080:80 \
   -p 8082:8082 \
-  minecraft-bedrock-server-add-on-manager
+  "$IMAGE_NAME"); then
+    echo "Error: Failed to start mc-server-manager container."
+    exit 1
+fi
 
 echo ""
-echo "mc-server-manager started. Checking logs..."
+echo "mc-server-manager started ($CID). Checking logs..."
 sleep 2
 docker logs mc-server-manager --tail 20

@@ -32,10 +32,18 @@ A web-based dashboard for managing add-ons (behaviour packs and resource packs) 
 - ✅ Enable and disable add-ons with a single click
 - ⬆️ Install add-ons by uploading `.mcaddon` or `.mcpack` files directly from the browser
 - 🗑️ Remove add-ons with a confirmation dialog
-- 🔄 Restart or ⏹️ Stop your Minecraft server directly from the dashboard
+- ➕ **Create new Minecraft servers** directly from the dashboard:
+  - Set display name, optional seed, and memory profile
+  - Auto-assigned deterministic port (`server1` → 19132, `server2` → 19133, etc.)
+  - Docker container created and configured automatically via Docker API
+  - Server folder mounted in manager on next startup (run `mc-server-manager-start.sh` after creation)
+- 🔄 **Start**, restart or ⏹️ **Stop** your Minecraft server directly from the dashboard (recreates stopped containers automatically on start)
 - 🟦 Live **Loaded** status per add-on — shows whether each pack was actually loaded by the server on its last boot, detected via Docker log streaming
 - 📊 Live **CPU%, memory usage, uptime and player count** per server container, updated via WebSocket every 10 seconds
-- 🖥️ Host machine **memory usage bar** showing total/used/available RAM
+- 🖥️ Host machine **memory and disk usage bars** showing total/used/available metrics
+  - **Disk space monitoring** displays free space in GB and percentage used
+  - **Disk threshold guard** (default: 4 GB free) prevents server creation when disk space is too low
+  - Threshold configurable via `MIN_FREE_DISK_GB` env var
 - 💻 **Send commands** to a running server directly from the dashboard, with a pre-configured command list from `commands.txt`
 - 🐳 Automatic container detection via Docker API — no manual container name configuration needed
 - ⚠️ Dependency validation — warns when a pack has unmet UUID dependencies
@@ -118,6 +126,9 @@ URL_WS_SERVER_URI=
 # URL_WEB_SERVER_HOST=minecraft.example.com
 # URL_WS_SERVER_PORT=443
 # URL_WS_SERVER_URI=/ws/
+
+# Disk space guard — minimum free space in GB required to create new servers (default: 4)
+# MIN_FREE_DISK_GB=4
 ```
 
 ### 3. Set up runtime data
@@ -211,21 +222,24 @@ bash reset-passwords.sh
         commands.txt            ← optional command suggestions
         avatars/
             yourname.png        ← user avatars (96×96px)
-    minecraft-data/             → mounted as server1
-        mc-server-manager/
-            meta.yaml           ← display name, description, heartbeat_ttl override
-            image.png           ← server image (512×512px)
-        behavior_packs/
-        resource_packs/
-        worlds/
-        server.properties
-    minecraft-data2/            → mounted as server2
-        ...
+    mc-servers/
+        server1/                → mounted as /mc-data/server1 in manager
+            mc-server-manager/
+                meta.yaml       ← display name, description, heartbeat_ttl override
+                image.png       ← server image (512×512px)
+            behavior_packs/
+            resource_packs/
+            worlds/
+            server.properties
+        server2/                → mounted as /mc-data/server2 in manager
+            ...
 ```
+
+Each server data folder (`server1`, `server2`, etc.) is automatically detected and mounted into the manager container as `/mc-data/serverN`. New servers can be created via the admin dashboard, which generates the container and folder structure automatically.
 
 ## How it works
 
-The manager mounts each Minecraft server's `minecraft-data` folder and reads/writes:
+The manager mounts each Minecraft server's data folder (`server1`, `server2`, etc.) and reads/writes:
 
 - `behavior_packs/*/manifest.json` — discovers installed behaviour packs
 - `resource_packs/*/manifest.json` — discovers installed resource packs
@@ -234,7 +248,14 @@ The manager mounts each Minecraft server's `minecraft-data` folder and reads/wri
 - `mc-server-manager/meta.yaml` — reads display name, description and per-server overrides
 - `mc-server-manager/image.png` — reads server image
 
-It connects to the Docker API (via `mc-docker-api` container) to automatically match each mounted data folder to its running container, retrieve port and status information, send restart/stop signals, and stream recent logs for pack load detection.
+**Server creation**: New servers can be created via the admin dashboard, which:
+- Generates a deterministic UDP port mapping: `server1` → 19132, `server2` → 19133, etc.
+- Creates the Docker container with the correct environment, memory limit, and network configuration
+- Creates the data folder structure on the host
+- Writes the server metadata (display name) to `mc-server-manager/meta.yaml`
+- Requires re-running `mc-server-manager-start.sh` to mount the new data folder into the manager container
+
+It connects to the Docker API (via `mc-docker-api` container) to automatically match each data folder to its running container, retrieve port and status information, send restart/stop signals, and stream recent logs for pack load detection.
 
 The WebSocket server (`app:websocket-server`, managed by Supervisor) pushes all live updates to connected browsers — no polling required.
 
@@ -261,7 +282,7 @@ bash mc-server-manager-start.sh
 
 Access to `/admin` requires `ROLE_ADMIN`. The public homepage at `/` is accessible anonymously but shows read-only information only.
 
-The Docker API is accessed via the `mc-docker-api` sidecar container rather than a direct socket mount, reducing the attack surface. No containers are created or deleted by this application.
+The Docker API is accessed via the `mc-docker-api` sidecar container rather than a direct socket mount, reducing the attack surface. Container creation is limited to Minecraft servers via the create-server feature and requires `ROLE_ADMIN`. No containers can be deleted via the application.
 
 Test/seed routes (`/test/seed/*`) require `ROLE_ADMIN` and are only useful in development.
 

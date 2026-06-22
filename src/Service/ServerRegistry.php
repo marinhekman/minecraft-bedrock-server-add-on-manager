@@ -18,13 +18,12 @@ class ServerRegistry
     /** @return ServerInstance[] */
     public function getAll(): array
     {
-        $names = $this->redisClient->getAllServerNames();
-
-        // Fall back to filesystem scan if Redis is empty so the homepage
-        // never shows "No servers found" due to wiped or expired keys.
-        if (empty($names)) {
-            $names = $this->scanFilesystem();
-        }
+        // Merge Redis + filesystem so newly created folders are visible
+        // immediately even before monitor sync writes Redis keys.
+        $names = array_values(array_unique(array_merge(
+            $this->redisClient->getAllServerNames(),
+            $this->scanFilesystem(),
+        )));
 
         $instances = [];
         foreach ($names as $name) {
@@ -89,7 +88,11 @@ class ServerRegistry
                 continue;
             }
             $path = $entry->getPathname();
-            if (is_dir($path . '/worlds') || file_exists($path . '/server.properties')) {
+            if (
+                is_dir($path . '/worlds')
+                || file_exists($path . '/server.properties')
+                || file_exists($path . '/mc-server-manager/meta.yaml')
+            ) {
                 $names[] = $entry->getFilename();
             }
         }

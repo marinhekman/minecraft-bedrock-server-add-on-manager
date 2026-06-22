@@ -4,27 +4,88 @@
 
 {% block body %}
 
-    {% if serverData is empty %}
-        <div class="alert alert-warning">
-            No servers found. Make sure your <code>minecraft-data</code> folders are mounted under <code>/mc-data/</code>.
-        </div>
-    {% else %}
+    {# Host stats card (always show) #}
+    <div class="card shadow-sm mb-4 bg-dark text-white" id="hostStatsCard">
+        <div class="card-body">
+            <strong class="d-block mb-2">🖥️ Host Resources</strong>
 
-        {# Host memory bar #}
-        <div class="card shadow-sm mb-4 bg-dark text-white" id="hostStatsCard">
-            <div class="card-body py-2 d-flex align-items-center gap-3 flex-wrap">
-                <strong>🖥️ Host</strong>
-                <div class="flex-grow-1" style="min-width:200px">
-                    <div class="d-flex justify-content-between small mb-1">
-                        <span>Memory</span>
-                        <span id="hostMemText">–</span>
-                    </div>
-                    <div class="progress" style="height:8px">
-                        <div class="progress-bar bg-info" id="hostMemBar" role="progressbar" style="width:0%"></div>
-                    </div>
+            {# Memory #}
+            <div class="mb-3">
+                <div class="d-flex justify-content-between small mb-1">
+                    <span>Memory</span>
+                    <span id="hostMemText">–</span>
+                </div>
+                <div class="progress" style="height:8px">
+                    <div class="progress-bar bg-info" id="hostMemBar" role="progressbar" style="width:0%"></div>
                 </div>
             </div>
+
+            {# Disk #}
+            <div class="mb-0">
+                <div class="d-flex justify-content-between small mb-1">
+                    <span>Disk</span>
+                    <span id="hostDiskText">–</span>
+                </div>
+                <div class="progress" style="height:8px">
+                    <div class="progress-bar bg-success" id="hostDiskBar" role="progressbar" style="width:0%"></div>
+                </div>
+                <small id="hostDiskWarning" class="text-warning d-none mt-1">
+                    ⚠️ Less than <span id="hostDiskMinFree"></span> GB free — server creation disabled
+                </small>
+            </div>
         </div>
+    </div>
+
+    {% if serverData is empty %}
+        <div class="alert alert-warning">
+            No servers found. Make sure your server folders (for example <code>server1</code>, <code>server2</code>) exist under <code>/mc-data/</code>.
+        </div>
+    {% endif %}
+
+    {# New Server button #}
+    <div class="mb-4">
+        <button class="btn btn-success" id="newServerBtn" data-bs-toggle="modal" data-bs-target="#newServerModal">
+            ➕ New Server
+        </button>
+    </div>
+
+    {# New Server modal #}
+    <div class="modal fade" id="newServerModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">➕ Create New Server</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <form method="post" action="{{ path('server_create') }}">
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label for="displayName" class="form-label">Display Name <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="displayName" name="display_name" placeholder="e.g. Creative World" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="seed" class="form-label">World Seed (optional)</label>
+                            <input type="text" class="form-control" id="seed" name="seed" placeholder="Leave empty for random">
+                        </div>
+                        <div class="mb-3">
+                            <label for="memoryProfile" class="form-label">Memory Profile</label>
+                            <select class="form-select" id="memoryProfile" name="memory_profile">
+                                <option value="low">Low (1GB)</option>
+                                <option value="medium" selected>Medium (2GB)</option>
+                                <option value="high">High (4GB)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-success" id="createServerBtn">Create Server</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    {% if serverData is not empty %}
         {% for data in serverData %}
             {% set server = data.server %}
             <div class="card shadow-sm mb-4"
@@ -36,37 +97,40 @@
                         {% if server.containerName %}
                             <span class="badge bg-secondary">🐳 {{ server.containerName }}</span>
                         {% endif %}
-                        {% if server.port %}
-                            <span class="badge bg-secondary">:{{ server.port }}</span>
+                        {% set inferredPort = null %}
+                        {% if server.name matches '/^server\\d+$/' %}
+                            {% set inferredPort = 19131 + ((server.name|replace({'server': ''})) + 0) %}
                         {% endif %}
-                        {% if server.isRunning %}
-                            <span class="badge bg-success">● Running</span>
-                            <span class="badge bg-dark stat-uptime" title="Uptime">UP –</span>
-                            <span class="badge bg-dark stat-cpu" title="CPU usage">CPU –</span>
-                            <span class="badge bg-dark stat-mem" title="Memory usage">MEM –</span>
-                            <span class="badge bg-primary stat-players" title="Online players">👥 –</span>
-                        {% else %}
-                            <span class="badge bg-danger">● Stopped</span>
+                        {% set displayPort = server.port ?? inferredPort %}
+                        {% if displayPort %}
+                            <span class="badge bg-secondary">:{{ displayPort }}</span>
                         {% endif %}
+                        <span class="badge {{ server.isRunning ? 'bg-success' : 'bg-danger' }} server-status-badge">
+                            {{ server.isRunning ? '● Running' : '● Stopped' }}
+                        </span>
+                        <span class="badge bg-dark stat-uptime" title="Uptime" style="{{ server.isRunning ? '' : 'display:none' }}">UP –</span>
+                        <span class="badge bg-dark stat-cpu" title="CPU usage" style="{{ server.isRunning ? '' : 'display:none' }}">CPU –</span>
+                        <span class="badge bg-dark stat-mem" title="Memory usage" style="{{ server.isRunning ? '' : 'display:none' }}">MEM –</span>
+                        <span class="badge bg-primary stat-players" title="Online players" style="{{ server.isRunning ? '' : 'display:none' }}">👥 –</span>
                         <span class="badge bg-success">{{ data.enabledCount }} enabled</span>
                         <span class="badge bg-secondary">{{ data.disabledCount }} disabled</span>
                     </div>
                     <div class="d-flex gap-2">
-                        {% if server.containerId %}
-                            {% if server.isRunning %}
-                                <form method="post" action="{{ path('server_restart', {serverName: server.name}) }}">
-                                    <button type="submit" class="btn btn-sm btn-warning">🔄 Restart server</button>
-                                </form>
-                                <form method="post" action="{{ path('server_stop', {serverName: server.name}) }}"
-                                      onsubmit="return confirm('Stop {{ server.containerName ?? server.name }}?')">
-                                    <button type="submit" class="btn btn-sm btn-danger">⏹ Stop</button>
-                                </form>
-                            {% else %}
-                                <form method="post" action="{{ path('server_restart', {serverName: server.name}) }}">
-                                    <button type="submit" class="btn btn-sm btn-success">▶ Start server</button>
-                                </form>
-                            {% endif %}
-                        {% endif %}
+                        <form method="post" action="{{ path('server_restart', {serverName: server.name}) }}" class="server-start-form">
+                            <button type="submit"
+                                    class="btn btn-sm server-start-btn {{ server.isRunning ? 'btn-warning' : 'btn-success' }}"
+                                    data-label-start="▶ Start server"
+                                    data-label-restart="🔄 Restart server">
+                                {{ server.isRunning ? '🔄 Restart server' : '▶ Start server' }}
+                            </button>
+                        </form>
+
+                        <form method="post" action="{{ path('server_stop', {serverName: server.name}) }}"
+                              class="server-stop-form"
+                              style="{{ server.isRunning ? '' : 'display:none' }}"
+                              onsubmit="return confirm('Stop {{ server.containerName ?? server.name }}?')">
+                            <button type="submit" class="btn btn-sm btn-danger">⏹ Stop</button>
+                        </form>
                         <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#installModal{{ server.name }}">⬆️ Install add-on</button>
                     </div>
                 </div>
@@ -267,5 +331,6 @@
             </div>
         {% endfor %}
     {% endif %}
+
 
 {% endblock %}

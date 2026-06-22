@@ -82,8 +82,13 @@
                     <div class="d-flex align-items-center gap-2">
                         <span class="{{ medalClass }}" title="Position #{{ loop.index }}">{{ medal }}</span>
                         <h2 class="h5 mb-0">🖥️ {{ meta.getDisplayName(server.name) }}</h2>
-                        {% if server.port %}
-                            <span class="badge bg-secondary">:{{ server.port }}</span>
+                        {% set inferredPort = null %}
+                        {% if server.name matches '/^server\\d+$/' %}
+                            {% set inferredPort = 19131 + ((server.name|replace({'server': ''})) + 0) %}
+                        {% endif %}
+                        {% set displayPort = server.port ?? inferredPort %}
+                        {% if displayPort %}
+                            <span class="badge bg-secondary">:{{ displayPort }}</span>
                         {% endif %}
                         {% if server.isRunning %}
                             <span class="badge bg-success">{{ '● Running'|trans }}</span>

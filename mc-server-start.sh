@@ -3,25 +3,29 @@ set -e
 export MSYS_NO_PATHCONV=1
 
 BASE_DIR="$HOME"
+SERVERS_ROOT="$BASE_DIR/mc-servers"
+mkdir -p "$SERVERS_ROOT"
 
-# ── Find existing minecraft-data folders ─────────────────────────────────────
+# ── Find existing server folders (server1, server2, ...) ────────────────────
 existing=()
-[ -d "$BASE_DIR/minecraft-data" ] && existing+=("minecraft-data")
-i=2
-while [ -d "$BASE_DIR/minecraft-data$i" ]; do
-    existing+=("minecraft-data$i")
-    i=$((i + 1))
+max_num=0
+for dir in "$SERVERS_ROOT"/server*; do
+    [ -d "$dir" ] || continue
+    name=$(basename "$dir")
+    if [[ "$name" =~ ^server([0-9]+)$ ]]; then
+        existing+=("$name")
+        num="${BASH_REMATCH[1]}"
+        if [ "$num" -gt "$max_num" ]; then
+            max_num="$num"
+        fi
+    fi
 done
 
 # Next available folder name
-if [ ! -d "$BASE_DIR/minecraft-data" ]; then
-    NEXT="minecraft-data"
-else
-    NEXT="minecraft-data$i"
-fi
+NEXT="server$((max_num + 1))"
 
 # ── Ask which folder to use ───────────────────────────────────────────────────
-echo "Existing minecraft-data folders:"
+echo "Existing server folders in $SERVERS_ROOT:"
 if [ ${#existing[@]} -eq 0 ]; then
     echo "  (none)"
 else
@@ -30,12 +34,18 @@ else
     done
 fi
 echo ""
-echo "Enter folder name to use (or press Enter to create '$NEXT'):"
+echo "Enter server folder name to use (serverN), or press Enter to create '$NEXT':"
 read -r DATA_FOLDER
 if [ -z "$DATA_FOLDER" ]; then
     DATA_FOLDER="$NEXT"
 fi
-DATA_PATH="$BASE_DIR/$DATA_FOLDER"
+
+if [[ ! "$DATA_FOLDER" =~ ^server[0-9]+$ ]]; then
+    echo "Error: Folder name must match serverN (e.g. server1, server2)."
+    exit 1
+fi
+
+DATA_PATH="$SERVERS_ROOT/$DATA_FOLDER"
 
 # ── Ask for external port ─────────────────────────────────────────────────────
 echo ""
@@ -65,11 +75,8 @@ case "$MEM_CHOICE" in
 esac
 
 # ── Derive container name from folder ────────────────────────────────────────
-if [ "$DATA_FOLDER" = "minecraft-data" ]; then
-    CONTAINER_NAME="mc-server"
-else
-    CONTAINER_NAME="mc-server-${DATA_FOLDER//minecraft-data/}"
-fi
+SERVER_NUM="${DATA_FOLDER#server}"
+CONTAINER_NAME="mc-server-$SERVER_NUM"
 
 # ── Build docker run command ──────────────────────────────────────────────────
 ARGS=(

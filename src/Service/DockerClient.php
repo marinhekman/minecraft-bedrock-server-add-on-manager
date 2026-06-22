@@ -23,6 +23,13 @@ class DockerClient
         ]) ?? [];
     }
 
+    public function listAllContainers(): array
+    {
+        return $this->request('GET', '/containers/json', [
+            'all' => 'true',
+        ]) ?? [];
+    }
+
     public function inspectContainer(string $id): ?array
     {
         if (!isset($this->inspectCache[$id])) {
@@ -45,6 +52,69 @@ class DockerClient
     public function stopContainer(string $id): void
     {
         $this->request('POST', sprintf('/containers/%s/stop', $id));
+    }
+
+    public function createContainer(string $name, array $config): array
+    {
+        $result = $this->request('POST', '/containers/create', [
+            'name' => $name,
+        ], $config);
+
+        return $result ?? ['Id' => null];
+    }
+
+    public function startContainer(string $id): void
+    {
+        $this->request('POST', sprintf('/containers/%s/start', $id));
+    }
+
+    /**
+     * Pull an image from the registry.
+     * This is a synchronous call that blocks until the pull is complete.
+     */
+    public function pullImage(string $image, string $tag = 'latest'): void
+    {
+        $url = $this->baseUrl() . '/images/create?' . http_build_query([
+            'fromImage' => $image,
+            'tag'       => $tag,
+        ]);
+
+        // Pull can take a while — use a longer timeout
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'POST');
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 300); // 5 minutes for large images
+        curl_setopt($ch, CURLOPT_POSTFIELDS, '');
+
+        $raw      = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $error    = curl_errno($ch) ? curl_error($ch) : null;
+        curl_close($ch);
+
+        if ($error) {
+            throw new \RuntimeException('Docker API pull error: ' . $error);
+        }
+
+        if ($httpCode >= 400) {
+            throw new \RuntimeException(sprintf(
+                'Docker API pull error %d for image %s:%s: %s',
+                $httpCode, $image, $tag, $raw
+            ));
+        }
+    }
+
+    /**
+     * Check if an image exists locally.
+     */
+    public function imageExists(string $image, string $tag = 'latest'): bool
+    {
+        try {
+            $result = $this->request('GET', sprintf('/images/%s:%s/json', $image, $tag));
+            return $result !== null;
+        } catch (\RuntimeException) {
+            return false;
+        }
     }
 
     public function sendCommand(string $containerId, string $command): void
@@ -113,9 +183,21 @@ class DockerClient
         }
 
         $info = $this->inspectContainer($selfId);
+        $containerPath = rtrim($containerPath, '/');
+
         foreach ($info['Mounts'] ?? [] as $mount) {
-            if (rtrim($mount['Destination'], '/') === rtrim($containerPath, '/')) {
-                return $mount['Source'];
+            $destination = rtrim($mount['Destination'] ?? '', '/');
+            $source      = rtrim($mount['Source'] ?? '', '/');
+
+            // Exact mount target match
+            if ($destination === $containerPath) {
+                return $source;
+            }
+
+            // Subpath inside mounted directory (e.g. /mc-data/server3)
+            if ($destination !== '' && str_starts_with($containerPath, $destination . '/')) {
+                $suffix = substr($containerPath, strlen($destination));
+                return $source . $suffix;
             }
         }
 

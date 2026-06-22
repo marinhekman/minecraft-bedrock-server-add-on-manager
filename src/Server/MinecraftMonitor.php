@@ -589,17 +589,31 @@ class MinecraftMonitor
         if ($container === null) {
             return null;
         }
+
+        // Fast path: running containers report ports in list response
         foreach ($container['Ports'] ?? [] as $port) {
             if (($port['PrivatePort'] ?? null) === 19132) {
                 return $port['PublicPort'] ?? null;
             }
         }
+
+        // Fallback: stopped containers have empty Ports but HostConfig still has bindings
+        $inspect  = $this->dockerClient->inspectContainer($container['Id']);
+        $bindings = $inspect['HostConfig']['PortBindings']['19132/udp'] ?? [];
+        foreach ($bindings as $binding) {
+            if (isset($binding['HostPort']) && $binding['HostPort'] !== '') {
+                return (int) $binding['HostPort'];
+            }
+        }
+
         return null;
     }
 
     private function isMinecraftDataFolder(string $path): bool
     {
-        return is_dir($path . '/worlds') || file_exists($path . '/server.properties');
+        return is_dir($path . '/worlds')
+            || file_exists($path . '/server.properties')
+            || file_exists($path . '/mc-server-manager/meta.yaml');
     }
 
     private function buildPackNameIndex(string $serverName): array
