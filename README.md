@@ -13,6 +13,8 @@ A web-based dashboard for managing add-ons (behaviour packs and resource packs) 
 ### Public homepage (`/`)
 - 🌐 Public server status page visible to anyone, no login required
 - 🖥️ Shows each server's display name, description and image (configured via `mc-server-manager/meta.yaml` inside the server data folder)
+- ✏️ Admin-only inline editing for server display name, description and image upload directly on the homepage
+- 🖼️ Uploaded images keep original dimensions; frontend CSS controls display size.
 - 🟢 Live running status, uptime and online player count per server — pushed in real time via WebSocket
 - 📦 Lists enabled add-ons (name, type, version) per server
 - 👤 Shows logged-in user's Xbox gamertag and avatar with role badge (Admin / User / Anonymous)
@@ -161,14 +163,16 @@ Place user avatars (96×96px PNG) in `~/mc-server-manager-data/avatars/yourname.
 
 ### 4. Optionally configure per-server metadata
 
-Inside each `minecraft-data` folder, create:
+Inside each `~/mc-servers/serverN` folder, create:
 
 ```
-minecraft-data/
+serverN/
     mc-server-manager/
         meta.yaml
-        image.png     ← 512×512px recommended
+        image.png
 ```
+
+Uploaded images keep original dimensions; frontend CSS controls display size.
 
 `meta.yaml` format — see [`server-meta.yaml.example`](server-meta.yaml.example).
 
@@ -230,7 +234,7 @@ bash reset-passwords.sh
         server1/                → mounted as /mc-data/server1 in manager
             mc-server-manager/
                 meta.yaml       ← display name, description, heartbeat_ttl override
-                image.png       ← server image (512×512px)
+                image.png       ← server image (original dimensions preserved)
             behavior_packs/
             resource_packs/
             worlds/
@@ -257,7 +261,8 @@ The manager mounts each Minecraft server's data folder (`server1`, `server2`, et
 - Creates the Docker container with the correct environment, memory limit, and network configuration
 - Creates the data folder structure on the host
 - Writes the server metadata (display name) to `mc-server-manager/meta.yaml`
-- Requires re-running `mc-server-manager-start.sh` to mount the new data folder into the manager container
+- Auto-creates `allowlist.json` from all users in `users.yaml` (only if file does not yet exist)
+- Auto-creates `permissions.json` with admin users as operators (only if file does not yet exist)
 
 It connects to the Docker API (via `mc-docker-api` container) to automatically match each data folder to its running container, retrieve port and status information, send restart/stop signals, and stream recent logs for pack load detection.
 
