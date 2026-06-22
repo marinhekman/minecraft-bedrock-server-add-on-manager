@@ -4,6 +4,7 @@ namespace App\Controller;
 
 use App\Service\DiskSpaceChecker;
 use App\Service\DockerClient;
+use App\Service\ServerDefaultsPopulator;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -14,8 +15,9 @@ use Symfony\Component\Yaml\Yaml;
 class ServerCreateController extends AbstractController
 {
     public function __construct(
-        private readonly DockerClient      $dockerClient,
-        private readonly DiskSpaceChecker  $diskSpaceChecker,
+        private readonly DockerClient             $dockerClient,
+        private readonly DiskSpaceChecker         $diskSpaceChecker,
+        private readonly ServerDefaultsPopulator  $defaultsPopulator,
     ) {}
 
     #[Route('/create', name: 'server_create', methods: ['POST'])]
@@ -103,6 +105,13 @@ class ServerCreateController extends AbstractController
 
             // Write metadata
             $this->writeServerMetadata($containerDataPath, $displayName);
+
+            // Populate allowlist and permissions from users.yaml (use container path)
+            try {
+                $this->defaultsPopulator->populateDefaultsForNewServer($containerDataPath);
+            } catch (\Exception $e) {
+                // Log but don't fail server creation if defaults population fails
+            }
 
             $this->addFlash('success', sprintf(
                 'Server "%s" created on port %d (not started). Start it manually from the dashboard or via voting.',

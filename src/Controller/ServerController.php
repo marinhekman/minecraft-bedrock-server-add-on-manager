@@ -4,6 +4,7 @@ namespace App\Controller;
 
 use App\Model\ServerInstance;
 use App\Service\DockerClient;
+use App\Service\ServerDefaultsPopulator;
 use App\Service\ServerRegistry;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\RedirectResponse;
@@ -15,8 +16,9 @@ use Symfony\Component\Routing\Attribute\Route;
 class ServerController extends AbstractController
 {
     public function __construct(
-        private readonly ServerRegistry $serverRegistry,
-        private readonly DockerClient   $dockerClient,
+        private readonly ServerRegistry           $serverRegistry,
+        private readonly DockerClient             $dockerClient,
+        private readonly ServerDefaultsPopulator  $defaultsPopulator,
     ) {}
 
     #[Route('/command', name: 'server_command', methods: ['POST'])]
@@ -175,6 +177,15 @@ class ServerController extends AbstractController
 
         if ($id === null) {
             throw new \RuntimeException('Failed to create missing container for existing server data folder.');
+        }
+
+        // Populate allowlist and permissions from users.yaml
+        // Use container path /mc-data/serverN format
+        $containerDataPath = "/mc-data/{$serverName}";
+        try {
+            $this->defaultsPopulator->populateDefaultsForNewServer($containerDataPath);
+        } catch (\Exception) {
+            // Log but don't fail container creation if defaults population fails
         }
 
         return $id;

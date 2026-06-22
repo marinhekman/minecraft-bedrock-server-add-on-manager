@@ -36,8 +36,12 @@ A web-based dashboard for managing add-ons (behaviour packs and resource packs) 
   - Set display name, optional seed, and memory profile
   - Auto-assigned deterministic port (`server1` → 19132, `server2` → 19133, etc.)
   - Docker container created and configured automatically via Docker API
-  - Server folder mounted in manager on next startup (run `mc-server-manager-start.sh` after creation)
-- 🔄 **Start**, restart or ⏹️ **Stop** your Minecraft server directly from the dashboard (recreates stopped containers automatically on start)
+  - **`allowlist.json` auto-created** with all users from `users.yaml` (skipped if file already exists)
+  - **`permissions.json` auto-created** with admin-role users as operators (skipped if file already exists)
+  - Server is created in stopped state — start manually or via voting
+- 🔄 **Start**, restart or ⏹️ **Stop** your Minecraft server directly from the dashboard
+  - Recreates the Docker container automatically if it was previously deleted (data folder is preserved)
+  - On container recreation, `allowlist.json` and `permissions.json` are also auto-created if not yet present
 - 🟦 Live **Loaded** status per add-on — shows whether each pack was actually loaded by the server on its last boot, detected via Docker log streaming
 - 📊 Live **CPU%, memory usage, uptime and player count** per server container, updated via WebSocket every 10 seconds
 - 🖥️ Host machine **memory and disk usage bars** showing total/used/available metrics
