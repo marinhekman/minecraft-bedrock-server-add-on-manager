@@ -73,9 +73,11 @@ function updateHostStats() {
                 }
                 if (newServerBtn) {
                     newServerBtn.disabled = isAboveThreshold;
+                    const disabledTemplate = newServerBtn.dataset.titleDisabledTemplate || 'Less than __GB__ GB free — cannot create new server';
+                    const enabledTitle     = newServerBtn.dataset.titleEnabled || 'Create new server';
                     newServerBtn.title = isAboveThreshold
-                        ? `Less than ${data.minFreeDiskGb} GB free — cannot create new server`
-                        : 'Create new server';
+                        ? disabledTemplate.replace('__GB__', data.minFreeDiskGb)
+                        : enabledTitle;
                 }
                 if (createServerBtn) {
                     createServerBtn.disabled = isAboveThreshold;

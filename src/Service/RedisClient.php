@@ -273,4 +273,19 @@ class RedisClient
     {
         $this->redis->del(["stop_countdown:$serverName"]);
     }
+
+    public function removeServerState(string $serverName): void
+    {
+        $this->clearVotesForServer($serverName);
+        $this->del([
+            "server:$serverName",
+            "players:$serverName",
+            "loaded:$serverName",
+            "stats:$serverName",
+            "vote_cooldown:$serverName",
+            "start_countdown:$serverName",
+            "stop_countdown:$serverName",
+            "starting:$serverName",
+        ]);
+    }
 }

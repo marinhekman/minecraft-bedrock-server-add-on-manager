@@ -40,3 +40,15 @@ votes: stemmen
 # ── Login page ────────────────────────────────────────────────────────────────
 Username: Gebruikersnaam
 Password: Wachtwoord
+
+# ── Homepage admin inline editing ─────────────────────────────────────────────
+'Click to edit': 'Klik om te bewerken'
+'Click to upload image': 'Klik om afbeelding te uploaden'
+'📷 Change': '📷 Wijzigen'
+'Click to edit description': 'Klik om beschrijving te bewerken'
+'Click to add a description...': 'Klik om een beschrijving toe te voegen...'
+'Image upload failed.': 'Uploaden van afbeelding mislukt.'
+'Image upload failed: %error%': 'Uploaden van afbeelding mislukt: %error%'
+'Save failed: %error%': 'Opslaan mislukt: %error%'
+'Unknown error': 'Onbekende fout'
+

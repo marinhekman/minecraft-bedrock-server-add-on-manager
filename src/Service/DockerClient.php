@@ -54,6 +54,13 @@ class DockerClient
         $this->request('POST', sprintf('/containers/%s/stop', $id));
     }
 
+    public function removeContainer(string $id, bool $force = false): void
+    {
+        $this->request('DELETE', sprintf('/containers/%s', $id), [
+            'force' => $force ? 'true' : 'false',
+        ]);
+    }
+
     public function createContainer(string $name, array $config): array
     {
         $result = $this->request('POST', '/containers/create', [

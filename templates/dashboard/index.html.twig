@@ -30,7 +30,7 @@
                     <div class="progress-bar bg-success" id="hostDiskBar" role="progressbar" style="width:0%"></div>
                 </div>
                 <small id="hostDiskWarning" class="text-warning d-none mt-1">
-                    ⚠️ Less than <span id="hostDiskMinFree"></span> GB free — server creation disabled
+                    {{ '⚠️ Less than %gb% GB free — server creation disabled'|trans({'%gb%': '<span id="hostDiskMinFree"></span>'})|raw }}
                 </small>
             </div>
         </div>
@@ -44,8 +44,13 @@
 
     {# New Server button #}
     <div class="mb-4">
-        <button class="btn btn-success" id="newServerBtn" data-bs-toggle="modal" data-bs-target="#newServerModal">
-            ➕ New Server
+        <button class="btn btn-success"
+                id="newServerBtn"
+                data-bs-toggle="modal"
+                data-bs-target="#newServerModal"
+                data-title-enabled="{{ 'Create new server'|trans }}"
+                data-title-disabled-template="{{ 'Less than %gb% GB free — cannot create new server'|trans({'%gb%': '__GB__'}) }}">
+            {{ '➕ New Server'|trans }}
         </button>
     </div>
 
@@ -54,31 +59,31 @@
         <div class="modal-dialog">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">➕ Create New Server</h5>
+                    <h5 class="modal-title">{{ '➕ Create New Server'|trans }}</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <form method="post" action="{{ path('server_create') }}">
                     <div class="modal-body">
                         <div class="mb-3">
-                            <label for="displayName" class="form-label">Display Name <span class="text-danger">*</span></label>
-                            <input type="text" class="form-control" id="displayName" name="display_name" placeholder="e.g. Creative World" required>
+                            <label for="displayName" class="form-label">{{ 'Display Name'|trans }} <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="displayName" name="display_name" placeholder="{{ 'e.g. Creative World'|trans }}" required>
                         </div>
                         <div class="mb-3">
-                            <label for="seed" class="form-label">World Seed (optional)</label>
-                            <input type="text" class="form-control" id="seed" name="seed" placeholder="Leave empty for random">
+                            <label for="seed" class="form-label">{{ 'World Seed (optional)'|trans }}</label>
+                            <input type="text" class="form-control" id="seed" name="seed" placeholder="{{ 'Leave empty for random'|trans }}">
                         </div>
                         <div class="mb-3">
-                            <label for="memoryProfile" class="form-label">Memory Profile</label>
+                            <label for="memoryProfile" class="form-label">{{ 'Memory Profile'|trans }}</label>
                             <select class="form-select" id="memoryProfile" name="memory_profile">
-                                <option value="low">Low (1GB)</option>
-                                <option value="medium" selected>Medium (2GB)</option>
-                                <option value="high">High (4GB)</option>
+                                <option value="low">{{ 'Low (1GB)'|trans }}</option>
+                                <option value="medium" selected>{{ 'Medium (2GB)'|trans }}</option>
+                                <option value="high">{{ 'High (4GB)'|trans }}</option>
                             </select>
                         </div>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                        <button type="submit" class="btn btn-success" id="createServerBtn">Create Server</button>
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ 'Cancel'|trans }}</button>
+                        <button type="submit" class="btn btn-success" id="createServerBtn">{{ 'Create Server'|trans }}</button>
                     </div>
                 </form>
             </div>
@@ -119,19 +124,45 @@
                         <form method="post" action="{{ path('server_restart', {serverName: server.name}) }}" class="server-start-form">
                             <button type="submit"
                                     class="btn btn-sm server-start-btn {{ server.isRunning ? 'btn-warning' : 'btn-success' }}"
-                                    data-label-start="▶ Start server"
-                                    data-label-restart="🔄 Restart server">
-                                {{ server.isRunning ? '🔄 Restart server' : '▶ Start server' }}
+                                    data-label-start="{{ '▶ Start server'|trans }}"
+                                    data-label-restart="{{ '🔄 Restart server'|trans }}">
+                                {{ server.isRunning ? '🔄 Restart server'|trans : '▶ Start server'|trans }}
                             </button>
                         </form>
 
                         <form method="post" action="{{ path('server_stop', {serverName: server.name}) }}"
                               class="server-stop-form"
                               style="{{ server.isRunning ? '' : 'display:none' }}"
-                              onsubmit="return confirm('Stop {{ server.containerName ?? server.name }}?')">
-                            <button type="submit" class="btn btn-sm btn-danger">⏹ Stop</button>
+                              onsubmit="return confirm('{{ 'Stop %server%?'|trans({'%server%': server.containerName ?? server.name}) }}')">
+                            <button type="submit" class="btn btn-sm btn-danger">{{ '⏹ Stop'|trans }}</button>
                         </form>
+                        <button type="button"
+                                class="btn btn-sm btn-outline-danger"
+                                data-bs-toggle="modal"
+                                data-bs-target="#deleteServerModal{{ server.name }}">
+                            {{ '🗑 Delete server'|trans }}
+                        </button>
                         <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#installModal{{ server.name }}">⬆️ Install add-on</button>
+                    </div>
+                </div>
+
+                <div class="modal fade" id="deleteServerModal{{ server.name }}" tabindex="-1">
+                    <div class="modal-dialog modal-sm">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title">{{ 'Delete server'|trans }}</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body">
+                                <p class="mb-0">{{ 'Are you sure you want to delete server "%server%"? This will permanently remove its container and data folder.'|trans({'%server%': server.name}) }}</p>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">{{ 'Cancel'|trans }}</button>
+                                <form method="post" action="{{ path('server_delete', {serverName: server.name}) }}">
+                                    <button type="submit" class="btn btn-danger btn-sm">{{ 'Delete permanently'|trans }}</button>
+                                </form>
+                            </div>
+                        </div>
                     </div>
                 </div>
 

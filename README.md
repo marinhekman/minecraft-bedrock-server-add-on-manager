@@ -44,6 +44,8 @@ A web-based dashboard for managing add-ons (behaviour packs and resource packs) 
 - 🔄 **Start**, restart or ⏹️ **Stop** your Minecraft server directly from the dashboard
   - Recreates the Docker container automatically if it was previously deleted (data folder is preserved)
   - On container recreation, `allowlist.json` and `permissions.json` are also auto-created if not yet present
+- 🗑️ **Delete servers** from the dashboard with confirmation
+  - Removes the Docker container (if present) and deletes the entire server data folder
 - 🟦 Live **Loaded** status per add-on — shows whether each pack was actually loaded by the server on its last boot, detected via Docker log streaming
 - 📊 Live **CPU%, memory usage, uptime and player count** per server container, updated via WebSocket every 10 seconds
 - 🖥️ Host machine **memory and disk usage bars** showing total/used/available metrics
@@ -291,7 +293,7 @@ bash mc-server-manager-start.sh
 
 Access to `/admin` requires `ROLE_ADMIN`. The public homepage at `/` is accessible anonymously but shows read-only information only.
 
-The Docker API is accessed via the `mc-docker-api` sidecar container rather than a direct socket mount, reducing the attack surface. Container creation is limited to Minecraft servers via the create-server feature and requires `ROLE_ADMIN`. No containers can be deleted via the application.
+The Docker API is accessed via the `mc-docker-api` sidecar container rather than a direct socket mount, reducing the attack surface. Container creation and deletion are limited to Minecraft servers via admin-only features that require `ROLE_ADMIN`.
 
 Test/seed routes (`/test/seed/*`) require `ROLE_ADMIN` and are only useful in development.
 

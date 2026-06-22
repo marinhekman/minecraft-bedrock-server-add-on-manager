@@ -89,7 +89,7 @@
                                 data-server="{{ server.name }}"
                                 data-url="/server/{{ server.name }}/meta/name"
                                 data-field="display_name"
-                                title="Click to edit"
+                                title="{{ 'Click to edit'|trans }}"
                                 style="cursor:pointer; border-bottom:1px dashed #aaa">
                                 🖥️ {{ meta.getDisplayName(server.name) }}
                             </h2>
@@ -133,7 +133,7 @@
                                 <div class="rounded bg-secondary d-flex align-items-center justify-content-center server-image-placeholder"
                                      data-server="{{ server.name }}"
                                      style="width:120px;height:120px;cursor:pointer;color:#fff;font-size:2rem;"
-                                     title="Click to upload image">
+                                     title="{{ 'Click to upload image'|trans }}">
                                     🖼️
                                 </div>
                             {% endif %}
@@ -142,7 +142,7 @@
                                      data-server="{{ server.name }}"
                                      data-url="/server/{{ server.name }}/meta/image"
                                      style="position:absolute;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:none;align-items:center;justify-content:center;cursor:pointer;border-radius:0.25rem;color:#fff;font-size:0.85rem;">
-                                    📷 Change
+                                    {{ '📷 Change'|trans }}
                                 </div>
                                 <input type="file" class="server-image-input d-none" accept="image/*" data-server="{{ server.name }}" data-url="/server/{{ server.name }}/meta/image">
                             {% endif %}
@@ -156,9 +156,10 @@
                                    data-server="{{ server.name }}"
                                    data-url="/server/{{ server.name }}/meta/description"
                                    data-field="description"
-                                   title="Click to edit description"
+                                   data-placeholder="{{ 'Click to add a description...'|trans }}"
+                                   title="{{ 'Click to edit description'|trans }}"
                                    style="cursor:pointer; min-height:1.5em; border-bottom:1px dashed #aaa">
-                                    {{ meta.description ?? 'Click to add a description...' }}
+                                    {{ meta.description ?? 'Click to add a description...'|trans }}
                                 </p>
                             {% elseif meta.description %}
                                 <p class="text-muted mb-0">{{ meta.description }}</p>
@@ -289,6 +290,11 @@
         starting:           {{ '⏳ Starting...'|trans|json_encode|raw }},
         vote:               {{ 'vote'|trans|json_encode|raw }},
         votes:              {{ 'votes'|trans|json_encode|raw }},
+        click_add_description: {{ 'Click to add a description...'|trans|json_encode|raw }},
+        image_upload_failed: {{ 'Image upload failed.'|trans|json_encode|raw }},
+        image_upload_failed_with_error: {{ 'Image upload failed: %error%'|trans({'%error%': '__ERROR__'})|json_encode|raw }},
+        save_failed_with_error: {{ 'Save failed: %error%'|trans({'%error%': '__ERROR__'})|json_encode|raw }},
+        unknown_error: {{ 'Unknown error'|trans|json_encode|raw }},
     };
 
     // ── Inline edit — name and description ────────────────────────────────────
@@ -342,10 +348,11 @@
                         }
                         img.src = data.imageUrl;
                     } else {
-                        alert('Image upload failed: ' + (data.error || 'Unknown error'));
+                        const tpl = window.i18n?.image_upload_failed_with_error || 'Image upload failed: __ERROR__';
+                        alert(tpl.replace('__ERROR__', data.error || (window.i18n?.unknown_error || 'Unknown error')));
                     }
                 } catch (e) {
-                    alert('Image upload failed.');
+                    alert(window.i18n?.image_upload_failed || 'Image upload failed.');
                 }
 
                 input.value = '';
@@ -358,10 +365,11 @@
         const url   = el.dataset.url;
         const field = el.dataset.field;
         const isName = type === 'name';
+        const placeholderText = el.dataset.placeholder || (window.i18n?.click_add_description || 'Click to add a description...');
 
         const originalText = el.textContent.trim()
             .replace(/^🖥️\s*/, '')
-            .replace(/^Click to add a description\.\.\.$/, '');
+            .replace(new RegExp('^' + placeholderText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$'), '');
 
         const input = isName
             ? document.createElement('input')
@@ -388,13 +396,14 @@
                 const data = await resp.json();
 
                 if (data.success) {
-                    el.textContent = isName ? ('🖥️ ' + (data[field] || newValue)) : (data[field] || newValue || 'Click to add a description...');
+                    el.textContent = isName ? ('🖥️ ' + (data[field] || newValue)) : (data[field] || newValue || placeholderText);
                 } else {
-                    el.textContent = isName ? ('🖥️ ' + originalText) : (originalText || 'Click to add a description...');
-                    alert('Save failed: ' + (data.error || 'Unknown error'));
+                    el.textContent = isName ? ('🖥️ ' + originalText) : (originalText || placeholderText);
+                    const tpl = window.i18n?.save_failed_with_error || 'Save failed: __ERROR__';
+                    alert(tpl.replace('__ERROR__', data.error || (window.i18n?.unknown_error || 'Unknown error')));
                 }
             } catch (e) {
-                el.textContent = isName ? ('🖥️ ' + originalText) : (originalText || 'Click to add a description...');
+                el.textContent = isName ? ('🖥️ ' + originalText) : (originalText || placeholderText);
             }
 
             input.replaceWith(el);

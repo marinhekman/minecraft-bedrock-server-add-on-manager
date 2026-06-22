@@ -9,6 +9,7 @@ use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Contracts\Translation\TranslatorInterface;
 use Symfony\Component\Yaml\Yaml;
 
 #[Route('/admin/server')]
@@ -18,14 +19,17 @@ class ServerCreateController extends AbstractController
         private readonly DockerClient             $dockerClient,
         private readonly DiskSpaceChecker         $diskSpaceChecker,
         private readonly ServerDefaultsPopulator  $defaultsPopulator,
+        private readonly TranslatorInterface      $translator,
     ) {}
 
     #[Route('/create', name: 'server_create', methods: ['POST'])]
     public function create(Request $request): RedirectResponse
     {
+        $this->denyAccessUnlessGranted('ROLE_ADMIN');
+
         // Check disk space first
         if (!$this->diskSpaceChecker->canCreateServer()) {
-            $this->addFlash('error', 'Cannot create server: not enough free disk space.');
+            $this->addFlash('error', $this->translator->trans('Cannot create server: not enough free disk space.'));
             return $this->redirectToRoute('admin_dashboard');
         }
 
@@ -34,12 +38,12 @@ class ServerCreateController extends AbstractController
         $profile     = $request->request->get('memory_profile', 'medium');
 
         if ($displayName === '') {
-            $this->addFlash('error', 'Display name is required.');
+            $this->addFlash('error', $this->translator->trans('Display name is required.'));
             return $this->redirectToRoute('admin_dashboard');
         }
 
         if (!in_array($profile, ['low', 'medium', 'high'], true)) {
-            $this->addFlash('error', 'Invalid memory profile.');
+            $this->addFlash('error', $this->translator->trans('Invalid memory profile.'));
             return $this->redirectToRoute('admin_dashboard');
         }
 
@@ -55,9 +59,9 @@ class ServerCreateController extends AbstractController
             // Deterministic mapping: server1->19132, server2->19133, ...
             $port = 19131 + $serverNum;
             if (!$this->isPortAvailable($port)) {
-                throw new \RuntimeException(sprintf(
-                    'Port %d is already in use. Free that port or choose a different server number.',
-                    $port
+                throw new \RuntimeException($this->translator->trans(
+                    'Port %port% is already in use. Free that port or choose a different server number.',
+                    ['%port%' => $port],
                 ));
             }
 
@@ -100,7 +104,7 @@ class ServerCreateController extends AbstractController
             $containerId  = $createResult['Id'] ?? null;
 
             if (!$containerId) {
-                throw new \RuntimeException('Failed to create container: no ID returned.');
+                throw new \RuntimeException($this->translator->trans('Failed to create container: no ID returned.'));
             }
 
             // Write metadata
@@ -113,14 +117,13 @@ class ServerCreateController extends AbstractController
                 // Log but don't fail server creation if defaults population fails
             }
 
-            $this->addFlash('success', sprintf(
-                'Server "%s" created on port %d (not started). Start it manually from the dashboard or via voting.',
-                $displayName,
-                $port
+            $this->addFlash('success', $this->translator->trans(
+                'Server "%name%" created on port %port% (not started). Start it manually from the dashboard or via voting.',
+                ['%name%' => $displayName, '%port%' => $port],
             ));
 
         } catch (\Exception $e) {
-            $this->addFlash('error', sprintf('Failed to create server: %s', $e->getMessage()));
+            $this->addFlash('error', $this->translator->trans('Failed to create server: %message%', ['%message%' => $e->getMessage()]));
         }
 
         return $this->redirectToRoute('admin_dashboard');
@@ -141,7 +144,7 @@ class ServerCreateController extends AbstractController
         }
 
         throw new \RuntimeException(
-            'Could not resolve host path for /mc-data. Ensure /mc-data is mounted in the manager container.'
+            $this->translator->trans('Could not resolve host path for /mc-data. Ensure /mc-data is mounted in the manager container.')
         );
     }
 
