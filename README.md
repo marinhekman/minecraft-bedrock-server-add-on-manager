@@ -67,7 +67,7 @@ A web-based dashboard for managing add-ons (behaviour packs and resource packs) 
 - 📝 Users configured via `users.yaml` (mounted at runtime, not committed to git)
 - 🔑 Sessions persist for 30 days with automatic renewal on each visit
 
-## Screenshot
+## Screenshots
 
 ![Homepage](screenshots/screenshot-homepage.png "Homepage")
 ![Admin dashboard](screenshots/screenshot-admin.png "Admin dashboard")
