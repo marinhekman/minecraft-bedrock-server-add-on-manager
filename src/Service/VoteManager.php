@@ -140,13 +140,26 @@ final class VoteManager
         $data    = $this->redis->getServer($leader);
         $profile = $data['memoryProfile'] ?? 'medium';
 
+        $decision = $this->budgetChecker->explainCanStart($profile);
+        $this->logger->debug('Resource decision path evaluated', [
+            'server' => $leader,
+            'votes' => $leaderVotes,
+            'candidateProfile' => $profile,
+            'runningProfiles' => $decision['runningProfiles'],
+            'resourceLimitsConfigured' => $decision['resourceLimitsConfigured'],
+            'matchedSlotSetIndex' => $decision['matchedSlotSetIndex'],
+            'slotSetEvaluations' => $decision['slotSetEvaluations'],
+        ]);
+
         // If resources allow starting without stopping anything — go ahead
         // regardless of players on other running servers.
-        if ($this->budgetChecker->canStart($profile)) {
+        if ($decision['allowed']) {
             $this->logger->info('Countdown trigger: server qualifies for start', [
                 'server' => $leader,
                 'votes'  => $leaderVotes,
                 'profile' => $profile,
+                'runningProfiles' => $decision['runningProfiles'],
+                'matchedSlotSetIndex' => $decision['matchedSlotSetIndex'],
             ]);
             return $leader;
         }
@@ -158,10 +171,20 @@ final class VoteManager
                 $this->logger->debug('Countdown blocked: resources occupied and players present', [
                     'leader'  => $leader,
                     'blocker' => $name,
+                    'candidateProfile' => $profile,
+                    'runningProfiles' => $decision['runningProfiles'],
+                    'slotSetEvaluations' => $decision['slotSetEvaluations'],
                 ]);
                 return null;
             }
         }
+
+        $this->logger->debug('Countdown blocked: resources do not allow start and no players-based unblock path selected', [
+            'server' => $leader,
+            'candidateProfile' => $profile,
+            'runningProfiles' => $decision['runningProfiles'],
+            'slotSetEvaluations' => $decision['slotSetEvaluations'],
+        ]);
 
         return null;
     }

@@ -8,6 +8,8 @@ class ResourceBudgetChecker
 {
     private const HIERARCHY = ['low', 'medium', 'high'];
 
+    private const DEFAULT_LEVEL = 1; // medium
+
     public function __construct(
         private readonly RedisClient      $redis,
         private readonly GlobalMetaReader $globalMetaReader,
@@ -19,6 +21,64 @@ class ResourceBudgetChecker
             $candidateProfile,
             $this->getRunningProfiles(),
         );
+    }
+
+    /**
+     * Returns a detailed, log-friendly decision path for canStart().
+     *
+     * @return array{
+     *   allowed: bool,
+     *   candidateProfile: string,
+     *   runningProfiles: list<string>,
+     *   resourceLimitsConfigured: bool,
+     *   matchedSlotSetIndex: int|null,
+     *   slotSetEvaluations: list<array{index:int,slotSet:array<string,int>,fits:bool,reason:string}>
+     * }
+     */
+    public function explainCanStart(string $candidateProfile): array
+    {
+        $runningProfiles = $this->getRunningProfiles();
+        $meta            = $this->globalMetaReader->read();
+
+        if ($meta->resourceLimits === []) {
+            return [
+                'allowed'                => true,
+                'candidateProfile'       => $candidateProfile,
+                'runningProfiles'        => $runningProfiles,
+                'resourceLimitsConfigured' => false,
+                'matchedSlotSetIndex'    => null,
+                'slotSetEvaluations'     => [],
+            ];
+        }
+
+        $matchedSlotSetIndex = null;
+        $slotSetEvaluations  = [];
+
+        foreach ($meta->resourceLimits as $idx => $slotSet) {
+            $fits = $this->fitsInSlotSet($runningProfiles, $candidateProfile, $slotSet);
+            $slotSetEvaluations[] = [
+                'index'   => $idx,
+                'slotSet' => $slotSet,
+                'fits'    => $fits,
+                'reason'  => $fits
+                    ? 'all running profiles and candidate fit this slot set'
+                    : 'one or more running profiles or candidate do not fit this slot set',
+            ];
+
+            if ($fits) {
+                $matchedSlotSetIndex = $idx;
+                break;
+            }
+        }
+
+        return [
+            'allowed'                  => $matchedSlotSetIndex !== null,
+            'candidateProfile'         => $candidateProfile,
+            'runningProfiles'          => $runningProfiles,
+            'resourceLimitsConfigured' => true,
+            'matchedSlotSetIndex'      => $matchedSlotSetIndex,
+            'slotSetEvaluations'       => $slotSetEvaluations,
+        ];
     }
 
     /**
@@ -111,9 +171,8 @@ class ResourceBudgetChecker
     private function findSlot(array $slots, string $profile): ?int
     {
         $profileLevel = array_search($profile, self::HIERARCHY, true);
-
         if ($profileLevel === false) {
-            $profileLevel = array_search('medium', self::HIERARCHY, true);
+            $profileLevel = self::DEFAULT_LEVEL;
         }
 
         foreach ($slots as $index => $slotType) {
