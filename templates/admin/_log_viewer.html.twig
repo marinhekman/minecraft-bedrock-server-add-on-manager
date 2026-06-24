@@ -1,0 +1,270 @@
+{% if is_granted('ROLE_ADMIN') %}
+{# ── Admin Log Viewer — floating FAB + Bootstrap offcanvas ───────────────── #}
+
+{# Floating action button, bottom-right #}
+<div style="position:fixed;bottom:1.25rem;right:1.25rem;z-index:1055">
+    <button class="btn btn-dark shadow-lg d-flex align-items-center gap-2"
+            type="button"
+            data-bs-toggle="offcanvas"
+            data-bs-target="#adminLogOffcanvas"
+            aria-controls="adminLogOffcanvas"
+            title="{{ 'View application logs'|trans }}">
+        {# WebSocket status dot #}
+        <span id="ws-status-dot"
+              style="width:9px;height:9px;border-radius:50%;background:#6c757d;display:inline-block;flex-shrink:0"
+              title="WebSocket: unknown"></span>
+        <span style="font-size:1.1rem">📋</span>
+        <span class="small fw-semibold">Logs</span>
+    </button>
+</div>
+
+{# Offcanvas panel #}
+<div class="offcanvas offcanvas-end"
+     tabindex="-1"
+     id="adminLogOffcanvas"
+     aria-labelledby="adminLogOffcanvasLabel"
+     style="width:min(700px,95vw)">
+
+    <div class="offcanvas-header bg-dark text-light py-2">
+        <h6 class="offcanvas-title mb-0" id="adminLogOffcanvasLabel">
+            📋 {{ 'Application Logs'|trans }}
+        </h6>
+        <div class="d-flex align-items-center gap-3 ms-auto">
+            <span id="log-live-badge" class="badge bg-secondary small">…</span>
+            <button id="log-refresh-btn"
+                    type="button"
+                    class="btn btn-sm btn-outline-light py-0 px-2"
+                    title="{{ 'Refresh'|trans }}">↺</button>
+            <button type="button"
+                    class="btn-close btn-close-white"
+                    data-bs-dismiss="offcanvas"
+                    aria-label="{{ 'Close'|trans }}"></button>
+        </div>
+    </div>
+
+    {# Filter bar #}
+    <div class="bg-dark border-bottom border-secondary px-3 py-2 d-flex align-items-center gap-2 flex-wrap">
+        <div class="d-flex gap-1 flex-wrap" id="log-level-filters">
+            <button class="btn btn-sm btn-outline-secondary active log-level-btn" data-level="">ALL</button>
+            <button class="btn btn-sm log-level-btn" data-level="DEBUG"    style="color:#6c757d;border-color:#6c757d">DEBUG</button>
+            <button class="btn btn-sm log-level-btn" data-level="INFO"     style="color:#0dcaf0;border-color:#0dcaf0">INFO</button>
+            <button class="btn btn-sm log-level-btn" data-level="WARNING"  style="color:#ffc107;border-color:#ffc107">WARN</button>
+            <button class="btn btn-sm log-level-btn" data-level="ERROR"    style="color:#dc3545;border-color:#dc3545">ERROR</button>
+            <button class="btn btn-sm log-level-btn" data-level="CRITICAL" style="color:#dc3545;border-color:#dc3545">CRIT</button>
+        </div>
+        <label class="visually-hidden ms-auto">
+            {{ 'Filter logs'|trans }}
+            <input id="log-search"
+                   type="search"
+                   aria-label="{{ 'Filter logs'|trans }}"
+                   placeholder="{{ 'Filter…'|trans }}"
+                   class="form-control form-control-sm bg-dark text-light border-secondary"
+                   style="max-width:180px">
+        </label>
+    </div>
+
+    <div class="offcanvas-body p-0 d-flex flex-column"
+         style="background:#0d1117;color:#c9d1d9;font-family:'Cascadia Code','Fira Mono',monospace;font-size:0.78rem">
+
+        <div id="log-entries-container"
+             style="flex:1;overflow-y:auto;padding:0.4rem 0">
+            <div id="log-loading" class="text-secondary text-center py-4">Loading…</div>
+        </div>
+
+        <div class="px-3 py-1 border-top border-secondary d-flex justify-content-between align-items-center"
+             style="background:#161b22;font-size:0.72rem;color:#6c757d">
+            <span id="log-entry-count">0 entries</span>
+            <span id="log-last-refresh">—</span>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    'use strict';
+
+    // ── constants ──────────────────────────────────────────────────────────────
+    const TAIL_URL      = '{{ path('admin_logs_tail') }}';
+    const REFRESH_MS    = 6000;
+
+    const LEVEL_COLORS = {
+        DEBUG:     '#6c757d',
+        INFO:      '#58a6ff',
+        NOTICE:    '#0dcaf0',
+        WARNING:   '#e3b341',
+        ERROR:     '#f85149',
+        CRITICAL:  '#f85149',
+        ALERT:     '#f85149',
+        EMERGENCY: '#f85149',
+    };
+
+    // ── state ──────────────────────────────────────────────────────────────────
+    let allEntries    = [];
+    let activeLevel   = '';
+    let searchText    = '';
+    let refreshTimer  = null;
+    let isOpen        = false;
+
+    // ── DOM refs ───────────────────────────────────────────────────────────────
+    const offcanvasEl    = document.getElementById('adminLogOffcanvas');
+    const container      = document.getElementById('log-entries-container');
+    const loadingEl      = document.getElementById('log-loading');
+    const countEl        = document.getElementById('log-entry-count');
+    const lastRefEl      = document.getElementById('log-last-refresh');
+    const liveBadge      = document.getElementById('log-live-badge');
+    const refreshBtn     = document.getElementById('log-refresh-btn');
+    const searchInput    = document.getElementById('log-search');
+    const levelBtns      = document.querySelectorAll('.log-level-btn');
+
+    // ── helpers ────────────────────────────────────────────────────────────────
+    function esc(str) {
+        return String(str ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    function formatTime(datetime) {
+        if (!datetime) return '—';
+        try {
+            const d = new Date(datetime);
+            return d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit', second: '2-digit'});
+        } catch { return datetime; }
+    }
+
+    function levelBadge(level) {
+        const color = LEVEL_COLORS[level] || '#c9d1d9';
+        return `<span style="color:${color};font-weight:700;min-width:5ch;display:inline-block">${esc(level)}</span>`;
+    }
+
+    function renderEntry(e) {
+        const level   = (e.level_name || 'INFO').toUpperCase();
+        const color   = LEVEL_COLORS[level] || '#c9d1d9';
+        const time    = formatTime(e.datetime);
+        const channel = e.channel ? `<span style="color:#8b949e">[${esc(e.channel)}]</span> ` : '';
+        const msg     = esc(e.message || '(no message)');
+
+        let extra = '';
+        const ctx  = e.context  && Object.keys(e.context).length  ? e.context  : null;
+        const extra2 = e.extra  && Object.keys(e.extra).length    ? e.extra    : null;
+
+        if (ctx || extra2) {
+            const combined = Object.assign({}, extra2 || {}, ctx || {});
+            extra = `<div style="color:#8b949e;padding-left:1rem;word-break:break-all">${esc(JSON.stringify(combined))}</div>`;
+        }
+
+        const borderLeft = `border-left:3px solid ${color}`;
+        return `<div class="log-row px-2 py-1" style="${borderLeft};border-bottom:1px solid #21262d" data-level="${level}">
+            <div>
+                <span style="color:#8b949e">${time}</span>&nbsp;
+                ${levelBadge(level)}&nbsp;
+                ${channel}<span style="color:#c9d1d9">${msg}</span>
+            </div>
+            ${extra}
+        </div>`;
+    }
+
+    function applyFilters() {
+        const rows = container.querySelectorAll('.log-row');
+        let visible = 0;
+        const search = searchText.toLowerCase();
+
+        rows.forEach(row => {
+            const level   = row.dataset.level || '';
+            const text    = row.textContent.toLowerCase();
+            const lvlOk   = !activeLevel || level === activeLevel;
+            const srchOk  = !search || text.includes(search);
+            row.style.display = (lvlOk && srchOk) ? '' : 'none';
+            if (lvlOk && srchOk) visible++;
+        });
+
+        countEl.textContent = `${visible} / ${allEntries.length} entries`;
+    }
+
+    function renderAll() {
+        if (!allEntries.length) {
+            container.innerHTML = '<div class="text-secondary text-center py-4">No log entries yet.</div>';
+            countEl.textContent = '0 entries';
+            return;
+        }
+
+        const wasAtBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 80;
+
+        // Only keep the last 200 for display performance
+        const toRender = allEntries.slice(-200);
+        container.innerHTML = toRender.map(renderEntry).join('');
+
+        applyFilters();
+
+        if (wasAtBottom) {
+            container.scrollTop = container.scrollHeight;
+        }
+    }
+
+    // ── data loading ──────────────────────────────────────────────────────────
+    async function loadLogs() {
+        try {
+            const res = await fetch(TAIL_URL);
+            const data = await res.json();
+            if (!res.ok) {
+                liveBadge.textContent = '⚠ Error';
+                liveBadge.className   = 'badge bg-danger small';
+                lastRefEl.textContent = 'HTTP ' + res.status;
+                return;
+            }
+            allEntries = data.entries || [];
+            loadingEl.style.display = 'none';
+            renderAll();
+            lastRefEl.textContent = 'Updated ' + new Date().toLocaleTimeString();
+            liveBadge.textContent = '● Live';
+            liveBadge.className   = 'badge bg-success small';
+        } catch (err) {
+            liveBadge.textContent = '⚠ Error';
+            liveBadge.className   = 'badge bg-danger small';
+            lastRefEl.textContent = 'Failed: ' + err.message;
+        }
+    }
+
+    function startAutoRefresh() {
+        if (refreshTimer) return;
+        refreshTimer = setInterval(loadLogs, REFRESH_MS);
+    }
+
+    function stopAutoRefresh() {
+        if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+        liveBadge.textContent = '⏸ Paused';
+        liveBadge.className   = 'badge bg-secondary small';
+    }
+
+    // ── events ────────────────────────────────────────────────────────────────
+    offcanvasEl.addEventListener('show.bs.offcanvas', () => {
+        isOpen = true;
+        loadLogs();
+        startAutoRefresh();
+    });
+
+    offcanvasEl.addEventListener('hide.bs.offcanvas', () => {
+        isOpen = false;
+        stopAutoRefresh();
+    });
+
+    refreshBtn.addEventListener('click', loadLogs);
+
+    levelBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            levelBtns.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            activeLevel = btn.dataset.level;
+            applyFilters();
+        });
+    });
+
+    searchInput.addEventListener('input', () => {
+        searchText = searchInput.value;
+        applyFilters();
+    });
+})();
+</script>
+{% endif %}
+

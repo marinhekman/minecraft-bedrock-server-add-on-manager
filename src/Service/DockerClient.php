@@ -2,6 +2,9 @@
 
 namespace App\Service;
 
+use Psr\Log\LoggerInterface;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
+
 class DockerClient
 {
     private const API_VERSION = 'v1.41';
@@ -10,6 +13,8 @@ class DockerClient
     private array $inspectCache = [];
 
     public function __construct(
+        #[Autowire(service: 'monolog.logger.docker')]
+        private readonly LoggerInterface $logger,
         private readonly string $dockerApiUrl = 'http://docker-api:2375',
     ) {}
 
@@ -81,6 +86,7 @@ class DockerClient
      */
     public function pullImage(string $image, string $tag = 'latest'): void
     {
+        $this->logger->info('Pulling Docker image', ['image' => $image, 'tag' => $tag]);
         $url = $this->baseUrl() . '/images/create?' . http_build_query([
             'fromImage' => $image,
             'tag'       => $tag,
@@ -100,15 +106,19 @@ class DockerClient
         curl_close($ch);
 
         if ($error) {
+            $this->logger->error('Docker API pull error', ['image' => $image, 'tag' => $tag, 'error' => $error]);
             throw new \RuntimeException('Docker API pull error: ' . $error);
         }
 
         if ($httpCode >= 400) {
+            $this->logger->error('Docker API pull returned HTTP error', ['image' => $image, 'tag' => $tag, 'status' => $httpCode, 'body' => $raw]);
             throw new \RuntimeException(sprintf(
                 'Docker API pull error %d for image %s:%s: %s',
                 $httpCode, $image, $tag, $raw
             ));
         }
+
+        $this->logger->info('Docker image pull completed', ['image' => $image, 'tag' => $tag]);
     }
 
     /**
@@ -117,7 +127,13 @@ class DockerClient
     public function imageExists(string $image, string $tag = 'latest'): bool
     {
         try {
-            $result = $this->request('GET', sprintf('/images/%s:%s/json', $image, $tag));
+            $result = $this->request(
+                'GET',
+                sprintf('/images/%s:%s/json', $image, $tag),
+                [],
+                [],
+                true,
+            );
             return $result !== null;
         } catch (\RuntimeException) {
             return false;
@@ -250,7 +266,13 @@ class DockerClient
         return rtrim($this->dockerApiUrl, '/') . '/' . self::API_VERSION;
     }
 
-    private function request(string $method, string $path, array $query = [], array $body = []): ?array
+    private function request(
+        string $method,
+        string $path,
+        array $query = [],
+        array $body = [],
+        bool $suppressHttpErrorLog = false,
+    ): ?array
     {
         $url = $this->baseUrl() . $path;
         if (!empty($query)) {
@@ -258,12 +280,18 @@ class DockerClient
         }
 
         $headers = [];
-        $raw     = $this->curl($method, $url, $body, $headers);
+        $raw     = $this->curl($method, $url, $body, $headers, $suppressHttpErrorLog);
 
         return $raw !== '' ? json_decode($raw, true) : null;
     }
 
-    private function curl(string $method, string $url, array $body = [], array $extraHeaders = []): string
+    private function curl(
+        string $method,
+        string $url,
+        array $body = [],
+        array $extraHeaders = [],
+        bool $suppressHttpErrorLog = false,
+    ): string
     {
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL, $url);
@@ -290,10 +318,14 @@ class DockerClient
         curl_close($ch);
 
         if ($error) {
+            $this->logger->error('Docker API request failed', ['method' => $method, 'url' => $url, 'error' => $error]);
             throw new \RuntimeException('Docker API error: ' . $error);
         }
 
         if ($httpCode >= 400) {
+            if (!$suppressHttpErrorLog) {
+                $this->logger->error('Docker API returned HTTP error', ['method' => $method, 'url' => $url, 'status' => $httpCode, 'body' => $raw]);
+            }
             throw new \RuntimeException(sprintf(
                 'Docker API error %d on %s %s: %s', $httpCode, $method, $url, $raw
             ));

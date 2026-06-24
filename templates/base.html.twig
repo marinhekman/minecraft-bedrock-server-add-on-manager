@@ -76,5 +76,14 @@
     </footer>
     {% endblock %}
 
+    <script>
+        window.myGamertag = {{ app.user ? (app.user.gamertag|json_encode)|raw : 'null' }};
+        window.wsUrl = {{ (ws_scheme ~ '://' ~ ws_host ~ ':' ~ ws_port ~ ws_uri)|json_encode|raw }};
+        window.countdownTtl = {{ constant('App\\Service\\RedisClient::COUNTDOWN_TTL') }};
+    </script>
+
+    {# Admin log viewer widget (bottom-right FAB + offcanvas) — admins only #}
+    {% include 'admin/_log_viewer.html.twig' %}
+
 </body>
 </html>

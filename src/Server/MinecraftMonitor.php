@@ -4,14 +4,17 @@ namespace App\Server;
 
 use App\Service\DockerClient;
 use App\Service\RedisClient;
+use App\Service\ServerContainerManager;
 use App\Service\VoteManager;
 use Psr\Http\Message\ResponseInterface;
+use Psr\Log\LoggerInterface;
 use React\EventLoop\Loop;
 use React\EventLoop\LoopInterface;
 use React\EventLoop\TimerInterface;
 use React\Http\Browser as ReactBrowser;
 use Symfony\Component\Console\Output\NullOutput;
 use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 class MinecraftMonitor
 {
@@ -50,10 +53,13 @@ class MinecraftMonitor
     public function __construct(
         private readonly DockerClient    $dockerClient,
         private readonly RedisClient     $redisClient,
+        private readonly ServerContainerManager $serverContainerManager,
         private readonly WebSocketServer $wsServer,
         private readonly VoteManager     $voteManager,
         private readonly string          $mcDataPath,
         private readonly string          $dockerApiUrl,
+        #[Autowire(service: 'monolog.logger.server')]
+        private readonly LoggerInterface $logger,
     ) {
         $this->loop    = Loop::get();
         $this->browser = new ReactBrowser($this->loop);
@@ -140,6 +146,7 @@ class MinecraftMonitor
             // No server qualifies for start — cancel any active start countdown
             if ($this->countdownServer !== null) {
                 $this->output->writeln("<comment>Countdown cancelled for {$this->countdownServer}</comment>");
+                $this->logger->info('Start countdown cancelled', ['server' => $this->countdownServer]);
                 $this->cancelCountdown();
             }
 
@@ -157,6 +164,7 @@ class MinecraftMonitor
 
         if ($this->countdownServer !== null) {
             $this->output->writeln("<comment>Countdown switched from {$this->countdownServer} to {$candidate}</comment>");
+            $this->logger->info('Start countdown switched', ['from' => $this->countdownServer, 'to' => $candidate]);
             $this->cancelCountdown();
         }
 
@@ -196,13 +204,32 @@ class MinecraftMonitor
     private function startCountdown(string $serverName): void
     {
         $this->output->writeln("<info>Starting " . RedisClient::COUNTDOWN_TTL . "s countdown for $serverName</info>");
+        $this->logger->info('Start countdown begun', ['server' => $serverName, 'ttl' => RedisClient::COUNTDOWN_TTL]);
 
         $this->countdownServer = $serverName;
-        $this->redisClient->setCountdown($serverName);
+
+        // Calculate timer duration based on whether countdown is already set
+        $existingCountdown = $this->redisClient->getCountdown($serverName);
+        if ($existingCountdown === null) {
+            // First time setting the countdown
+            $this->redisClient->setCountdown($serverName);
+            $timerDuration = RedisClient::COUNTDOWN_TTL;
+        } else {
+            // Countdown was already set (e.g., by VoteController)
+            // Calculate remaining time to fire the timer appropriately
+            $elapsed = time() - $existingCountdown;
+            $timerDuration = max(1, RedisClient::COUNTDOWN_TTL - $elapsed);
+            $this->logger->debug('Countdown already active, scheduling timer for remaining time', [
+                'server' => $serverName,
+                'elapsed' => $elapsed,
+                'remaining' => $timerDuration,
+            ]);
+        }
+
         $this->wsServer->broadcastServerUpdate($serverName);
 
         $this->countdownTimer = $this->loop->addTimer(
-            RedisClient::COUNTDOWN_TTL,
+            $timerDuration,
             function () use ($serverName) {
                 $this->fireCountdown($serverName);
             }
@@ -226,6 +253,7 @@ class MinecraftMonitor
     private function startStopCountdown(string $serverName): void
     {
         $this->output->writeln("<info>Starting " . RedisClient::COUNTDOWN_TTL . "s stop countdown for $serverName</info>");
+        $this->logger->info('Stop countdown begun (auto-stop)', ['server' => $serverName, 'ttl' => RedisClient::COUNTDOWN_TTL]);
 
         $this->redisClient->setStopCountdown($serverName);
         $this->wsServer->broadcastServerUpdate($serverName);
@@ -248,6 +276,7 @@ class MinecraftMonitor
         $this->redisClient->clearStopCountdown($serverName);
         $this->wsServer->broadcastServerUpdate($serverName);
         $this->output->writeln("<comment>Stop countdown cancelled for $serverName</comment>");
+        $this->logger->info('Stop countdown cancelled', ['server' => $serverName]);
     }
 
     private function cancelAllStopCountdowns(): void
@@ -262,12 +291,14 @@ class MinecraftMonitor
         unset($this->stopCountdownTimers[$serverName]);
 
         $this->output->writeln("<info>Stop countdown fired for $serverName</info>");
+        $this->logger->info('Stop countdown fired', ['server' => $serverName]);
 
         $data        = $this->redisClient->getServer($serverName);
         $containerId = $data['containerId'] ?? null;
 
         if ($containerId === null) {
             $this->output->writeln("<error>No containerId for $serverName — cannot stop</error>");
+            $this->logger->error('Auto-stop failed: no containerId', ['server' => $serverName]);
             $this->redisClient->clearStopCountdown($serverName);
             return;
         }
@@ -275,6 +306,7 @@ class MinecraftMonitor
         // Safety check — don't stop if players joined during countdown
         if ($this->redisClient->getPlayerCount($serverName) > 0) {
             $this->output->writeln("<comment>Players joined $serverName during stop countdown — aborting stop</comment>");
+            $this->logger->warning('Auto-stop aborted: players joined during countdown', ['server' => $serverName]);
             $this->redisClient->clearStopCountdown($serverName);
             $this->wsServer->broadcastServerUpdate($serverName);
             return;
@@ -282,6 +314,7 @@ class MinecraftMonitor
 
         try {
             $this->output->writeln("<info>Auto-stopping $serverName to free resources</info>");
+            $this->logger->info('Auto-stopping server to free resources', ['server' => $serverName, 'containerId' => $containerId]);
             $this->dockerClient->stopContainer($containerId);
             $this->voteManager->onServerAutoStopped($serverName);
             $this->wsServer->broadcastServerUpdate($serverName);
@@ -289,6 +322,7 @@ class MinecraftMonitor
             $this->loop->addTimer(2, fn() => $this->evaluateCountdown());
         } catch (\RuntimeException $e) {
             $this->output->writeln("<error>Failed to stop $serverName: {$e->getMessage()}</error>");
+            $this->logger->error('Failed to auto-stop server', ['server' => $serverName, 'error' => $e->getMessage()]);
             $this->redisClient->clearStopCountdown($serverName);
         }
     }
@@ -299,32 +333,45 @@ class MinecraftMonitor
         $this->countdownServer = null;
 
         $this->output->writeln("<info>Countdown fired for $serverName — validating...</info>");
+        $this->logger->info('Start countdown fired, validating', ['server' => $serverName]);
 
         if (!$this->voteManager->confirmStart($serverName)) {
             $this->output->writeln("<comment>Countdown validation failed for $serverName — aborting start</comment>");
+            $this->logger->warning('Start countdown validation failed — aborting', ['server' => $serverName]);
             $this->redisClient->clearCountdown($serverName);
             $this->wsServer->broadcastServerUpdate($serverName);
             $this->evaluateCountdown();
             return;
         }
 
-        $data        = $this->redisClient->getServer($serverName);
+        $data        = $this->redisClient->getServer($serverName) ?? [];
         $containerId = $data['containerId'] ?? null;
-
-        if ($containerId === null) {
-            $this->output->writeln("<error>No containerId for $serverName — cannot start</error>");
-            $this->redisClient->clearCountdown($serverName);
-            return;
-        }
+        $profile     = $data['memoryProfile'] ?? 'medium';
 
         try {
+            if ($containerId === null) {
+                $containerId = $this->serverContainerManager->ensureContainerExists(
+                    $serverName,
+                    $this->mcDataPath . '/' . $serverName,
+                    $profile,
+                );
+                $this->logger->info('Auto-start created missing container before start', [
+                    'server' => $serverName,
+                    'containerId' => $containerId,
+                    'profile' => $profile,
+                ]);
+            }
+
             $this->output->writeln("<info>Auto-starting $serverName</info>");
-            $this->dockerClient->restartContainer($containerId);
+            $this->logger->info('Auto-starting server', ['server' => $serverName, 'containerId' => $containerId]);
+            $this->dockerClient->startContainer($containerId);
             $this->voteManager->onServerStarted($serverName);
             $this->redisClient->setStarting($serverName);
             $this->wsServer->broadcastServerUpdate($serverName);
+            $this->loop->addTimer(1, fn() => $this->syncServer($serverName));
         } catch (\RuntimeException $e) {
             $this->output->writeln("<error>Failed to start $serverName: {$e->getMessage()}</error>");
+            $this->logger->error('Failed to auto-start server', ['server' => $serverName, 'error' => $e->getMessage()]);
             $this->redisClient->clearCountdown($serverName);
         }
     }
@@ -392,6 +439,7 @@ class MinecraftMonitor
         $startedAt   = $server['startedAt'];
 
         $this->output->writeln("<info>Opening log stream for $name (container: $containerId, since: $startedAt)</info>");
+        $this->logger->info('Opening Docker log stream', ['server' => $name, 'containerId' => $containerId]);
 
         $this->redisClient->setLoadedUuids($name, []);
         $this->updatePlayerCount($name, 0);
@@ -411,6 +459,7 @@ class MinecraftMonitor
                         ->then(
                             function (ResponseInterface $response) use ($name) {
                                 $this->output->writeln("<info>Log stream opened for $name</info>");
+                                $this->logger->info('Log stream opened', ['server' => $name]);
                                 $body = $response->getBody();
 
                                 $body->on('data', function (string $chunk) use ($name) {
@@ -419,6 +468,7 @@ class MinecraftMonitor
 
                                 $body->on('close', function () use ($name) {
                                     $this->output->writeln("<comment>Log stream closed for $name, rescanning...</comment>");
+                                    $this->logger->warning('Log stream closed unexpectedly, rescanning', ['server' => $name]);
                                     unset($this->streams[$name]);
                                     $this->loop->addTimer(3, fn() => $this->syncServer($name));
                                 });
@@ -427,12 +477,14 @@ class MinecraftMonitor
                             },
                             function (\Exception $e) use ($name) {
                                 $this->output->writeln("<error>STREAM ERROR for $name: " . get_class($e) . ': ' . $e->getMessage() . "</error>");
+                                $this->logger->error('Log stream error', ['server' => $name, 'error' => $e->getMessage(), 'class' => get_class($e)]);
                                 $this->loop->addTimer(5, fn() => $this->syncServer($name));
                             }
                         );
                 },
                 function (\Exception $e) use ($name) {
                     $this->output->writeln("<error>Connectivity FAILED: " . $e->getMessage() . "</error>");
+                    $this->logger->error('Docker API connectivity failed', ['server' => $name, 'error' => $e->getMessage()]);
                     $this->loop->addTimer(5, fn() => $this->syncServer($name));
                 }
             );
@@ -494,6 +546,7 @@ class MinecraftMonitor
             if (preg_match(self::PLAYER_JOIN_REGEX, $line, $m)) {
                 $this->updatePlayerCount($serverName, ($this->playerCounts[$serverName] ?? 0) + 1);
                 $this->output->writeln("<comment>[$serverName] Player joined: {$m[1]}</comment>");
+                $this->logger->info('Player joined', ['server' => $serverName, 'player' => $m[1], 'xuid' => $m[2]]);
                 // A player joining a running server may cancel a countdown
                 $this->evaluateCountdown();
                 continue;
@@ -503,6 +556,7 @@ class MinecraftMonitor
                 $count = max(0, ($this->playerCounts[$serverName] ?? 0) - 1);
                 $this->updatePlayerCount($serverName, $count);
                 $this->output->writeln("<comment>[$serverName] Player left: {$m[1]}</comment>");
+                $this->logger->info('Player left', ['server' => $serverName, 'player' => $m[1], 'xuid' => $m[2], 'remaining' => $count]);
                 // A player leaving may allow a countdown to start
                 $this->evaluateCountdown();
                 continue;
@@ -553,6 +607,7 @@ class MinecraftMonitor
         $this->closeLogStream($name);
         unset($this->servers[$name]);
         $this->output->writeln("<comment>Server removed: $name</comment>");
+        $this->logger->info('Server removed from monitor', ['server' => $name]);
     }
 
     private function findContainer(string $serverName): ?array

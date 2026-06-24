@@ -4,9 +4,10 @@ namespace App\Controller;
 
 use App\Model\ServerInstance;
 use App\Service\DockerClient;
-use App\Service\ServerDefaultsPopulator;
+use App\Service\ServerContainerManager;
 use App\Service\RedisClient;
 use App\Service\ServerRegistry;
+use Psr\Log\LoggerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -20,9 +21,10 @@ class ServerController extends AbstractController
     public function __construct(
         private readonly ServerRegistry           $serverRegistry,
         private readonly DockerClient             $dockerClient,
-        private readonly ServerDefaultsPopulator  $defaultsPopulator,
+        private readonly ServerContainerManager   $serverContainerManager,
         private readonly RedisClient              $redisClient,
         private readonly TranslatorInterface      $translator,
+        private readonly LoggerInterface          $logger,
     ) {}
 
     #[Route('/command', name: 'server_command', methods: ['POST'])]
@@ -51,8 +53,10 @@ class ServerController extends AbstractController
 
         try {
             $this->dockerClient->sendCommand($server->containerId, $command);
+            $this->logger->info('Admin command sent', ['server' => $serverName, 'command' => $command, 'admin' => $this->getUser()?->getUserIdentifier()]);
             $this->addFlash('success', $this->translator->trans('Command sent: <code>%command%</code>', ['%command%' => htmlspecialchars($command)]));
         } catch (\RuntimeException $e) {
+            $this->logger->error('Failed to send command', ['server' => $serverName, 'command' => $command, 'error' => $e->getMessage()]);
             $this->addFlash('error', $this->translator->trans('Failed to send command: %message%', ['%message%' => $e->getMessage()]));
         }
 
@@ -78,8 +82,10 @@ class ServerController extends AbstractController
 
         try {
             $this->dockerClient->stopContainer($server->containerId);
+            $this->logger->info('Admin stopped server', ['server' => $serverName, 'admin' => $this->getUser()?->getUserIdentifier()]);
             $this->addFlash('success', $this->translator->trans('Server "%name%" is stopping.', ['%name%' => $server->containerName ?? $serverName]));
         } catch (\RuntimeException $e) {
+            $this->logger->error('Admin stop failed', ['server' => $serverName, 'error' => $e->getMessage()]);
             $this->addFlash('error', $this->translator->trans('Failed to stop server: %message%', ['%message%' => $e->getMessage()]));
         }
 
@@ -103,12 +109,15 @@ class ServerController extends AbstractController
 
             if ($server->isRunning()) {
                 $this->dockerClient->restartContainer($containerId);
+                $this->logger->info('Admin restarted server', ['server' => $serverName, 'admin' => $this->getUser()?->getUserIdentifier()]);
             } else {
                 $this->dockerClient->startContainer($containerId);
+                $this->logger->info('Admin started server', ['server' => $serverName, 'admin' => $this->getUser()?->getUserIdentifier()]);
             }
 
             $this->addFlash('success', $this->translator->trans('Server "%name%" is starting.', ['%name%' => $server->containerName ?? $serverName]));
         } catch (\RuntimeException $e) {
+            $this->logger->error('Admin start/restart failed', ['server' => $serverName, 'error' => $e->getMessage()]);
             $this->addFlash('error', $this->translator->trans('Failed to start server: %message%', ['%message%' => $e->getMessage()]));
         }
 
@@ -142,8 +151,10 @@ class ServerController extends AbstractController
             $this->removeDirectory($server->dataPath);
             $this->redisClient->removeServerState($serverName);
 
+            $this->logger->info('Admin deleted server', ['server' => $serverName, 'admin' => $this->getUser()?->getUserIdentifier()]);
             $this->addFlash('success', $this->translator->trans('Server "%name%" has been deleted.', ['%name%' => $serverName]));
         } catch (\RuntimeException $e) {
+            $this->logger->error('Admin delete failed', ['server' => $serverName, 'error' => $e->getMessage()]);
             $this->addFlash('error', $this->translator->trans('Failed to delete server: %message%', ['%message%' => $e->getMessage()]));
         }
 
@@ -156,83 +167,11 @@ class ServerController extends AbstractController
             return $server->containerId;
         }
 
-        $hostDataPath = $this->dockerClient->resolveHostPath($server->dataPath);
-        if ($hostDataPath === null) {
-            throw new \RuntimeException($this->translator->trans('Could not resolve host path for "%path%".', ['%path%' => $server->dataPath]));
-        }
-
-        if (!$this->dockerClient->imageExists('itzg/minecraft-bedrock-server')) {
-            $this->dockerClient->pullImage('itzg/minecraft-bedrock-server');
-        }
-
-        $serverNum = null;
-        if (preg_match('/^server(\d+)$/', $serverName, $m)) {
-            $serverNum = (int) $m[1];
-        }
-
-        $containerName = $serverNum !== null
-            ? sprintf('mc-server-%d', $serverNum)
-            : 'mc-' . preg_replace('/[^a-z0-9-]+/i', '-', strtolower($serverName));
-
-        if ($serverNum !== null) {
-            $port = 19131 + $serverNum;
-            if (!$this->isPortAvailable($port)) {
-                throw new \RuntimeException($this->translator->trans(
-                    'Cannot start %name%: expected port %port% is already in use.',
-                    ['%name%' => $serverName, '%port%' => $port],
-                ));
-            }
-        } else {
-            $port = 19133;
-            if (!$this->isPortAvailable($port)) {
-                throw new \RuntimeException($this->translator->trans('Cannot start server: port 19133 is already in use.'));
-            }
-        }
-
-        $profile = in_array($server->memoryProfile, ['low', 'medium', 'high'], true)
-            ? $server->memoryProfile
-            : 'medium';
-
-        $memoryBytes = match ($profile) {
-            'low'    => 1073741824,
-            'medium' => 2147483648,
-            'high'   => 4294967296,
-        };
-
-        $config = [
-            'Image' => 'itzg/minecraft-bedrock-server',
-            'Env'   => [
-                'EULA=TRUE',
-                'MEMORY_PROFILE=' . $profile,
-            ],
-            'HostConfig' => [
-                'NetworkMode'   => 'mc-net',
-                'Binds'         => ["{$hostDataPath}:/data"],
-                'PortBindings'  => [
-                    '19132/udp' => [['HostPort' => (string) $port]],
-                ],
-                'RestartPolicy' => ['Name' => 'unless-stopped'],
-                'Memory'        => $memoryBytes,
-            ],
-        ];
-
-        $result = $this->dockerClient->createContainer($containerName, $config);
-        $id     = $result['Id'] ?? null;
-
-        if ($id === null) {
-            throw new \RuntimeException($this->translator->trans('Failed to create missing container for existing server data folder.'));
-        }
-
-        // Populate allowlist and permissions from users.yaml
-        // Use container path /mc-data/serverN format
-        $containerDataPath = "/mc-data/{$serverName}";
-        try {
-            $this->defaultsPopulator->populateDefaultsForNewServer($containerDataPath);
-        } catch (\Exception) {
-            // Log but don't fail container creation if defaults population fails
-        }
-
-        return $id;
+        return $this->serverContainerManager->ensureContainerExists(
+            $serverName,
+            $server->dataPath,
+            $server->memoryProfile,
+        );
     }
 
     private function removeDirectory(string $dir): void
@@ -282,36 +221,6 @@ class ServerController extends AbstractController
         @rmdir($dir);
     }
 
-    private function isPortAvailable(int $port): bool
-    {
-        $usedPorts  = [];
-        $containers = $this->dockerClient->listAllContainers();
-
-        foreach ($containers as $container) {
-            foreach ($container['Ports'] ?? [] as $portBinding) {
-                if ($portBinding['PublicPort'] ?? null) {
-                    $usedPorts[] = (int) $portBinding['PublicPort'];
-                }
-            }
-
-            $containerId = $container['Id'] ?? null;
-            if (!$containerId) {
-                continue;
-            }
-
-            $inspect = $this->dockerClient->inspectContainer($containerId);
-            foreach (($inspect['HostConfig']['PortBindings'] ?? []) as $bindings) {
-                foreach ($bindings as $binding) {
-                    if (isset($binding['HostPort']) && $binding['HostPort'] !== '') {
-                        $usedPorts[] = (int) $binding['HostPort'];
-                    }
-                }
-            }
-        }
-
-        $usedPorts = array_values(array_unique($usedPorts));
-        return !in_array($port, $usedPorts, true);
-    }
 
     #[Route('/image', name: 'server_image', methods: ['GET'])]
     public function image(string $serverName): Response

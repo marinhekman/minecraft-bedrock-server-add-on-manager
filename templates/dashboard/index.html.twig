@@ -94,7 +94,8 @@
         {% for data in serverData %}
             {% set server = data.server %}
             <div class="card shadow-sm mb-4"
-                data-server="{{ server.name }}">
+                data-server="{{ server.name }}"
+                data-last-started-at="{{ server.startedAt ?? '' }}">
 
                 <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
                     <div class="d-flex align-items-center gap-2">

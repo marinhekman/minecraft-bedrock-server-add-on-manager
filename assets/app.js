@@ -34,18 +34,22 @@ document.addEventListener('turbo:load', initPopovers);
 
 function updateHostStats() {
     fetch('/host/stats')
-        .then(r => r.json())
-        .then(data => {
+        .then(r => r.json().then(data => ({ ok: r.ok, data })))
+        .then(({ ok, data }) => {
             // Memory stats
             const memText = document.getElementById('hostMemText');
             const memBar  = document.getElementById('hostMemBar');
-            if (memText && memBar && !data.error) {
+            if (memText && memBar && data.memoryAvailable) {
                 memText.textContent = `${data.usedMb} MB / ${data.totalMb} MB (${data.usedPercent}%)`;
                 memBar.style.width  = data.usedPercent + '%';
                 memBar.className    = 'progress-bar ' + (
                     data.usedPercent > 90 ? 'bg-danger' :
                     data.usedPercent > 70 ? 'bg-warning' : 'bg-info'
                 );
+            } else if (memText && memBar) {
+                memText.textContent = data.memoryError || 'Memory unavailable';
+                memBar.style.width  = '0%';
+                memBar.className    = 'progress-bar bg-secondary';
             }
 
             // Disk stats
@@ -55,7 +59,7 @@ function updateHostStats() {
             const newServerBtn = document.getElementById('newServerBtn');
             const createServerBtn = document.getElementById('createServerBtn');
 
-            if (diskText && diskBar && !data.error) {
+            if (diskText && diskBar) {
                 diskText.textContent = `${data.diskUsedGb} GB / ${data.diskTotalGb} GB (${data.diskAvailGb} GB free)`;
                 diskBar.style.width  = data.diskUsedPercent + '%';
                 diskBar.className    = 'progress-bar ' + (
@@ -83,8 +87,17 @@ function updateHostStats() {
                     createServerBtn.disabled = isAboveThreshold;
                 }
             }
-        })
-        .catch(() => {});
+
+            if (!ok) {
+                console.warn('[host-stats] Endpoint responded with non-OK status', data);
+            }
+        }, err => {
+            const memText = document.getElementById('hostMemText');
+            const diskText = document.getElementById('hostDiskText');
+            if (memText) memText.textContent = 'Unavailable';
+            if (diskText) diskText.textContent = 'Unavailable';
+            console.error('[host-stats] Failed to fetch host stats', err);
+        });
 }
 
 let hostStatsInterval = null;
@@ -482,14 +495,79 @@ function reorderCards() {
     });
 }
 
+let activeWebSocket = null;
+let heartbeatInterval = null;
+
+// ── WebSocket status indicator ────────────────────────────────────────────────
+
+/**
+ * Update the small dot on the Logs FAB to reflect live WebSocket state.
+ * Values: 'connected' | 'connecting' | 'disconnected'
+ */
+function setWsStatusDot(status) {
+    const dot = document.getElementById('ws-status-dot');
+    if (!dot) return;
+    const map = {
+        connected:    { bg: '#198754', title: 'Live: WebSocket connected' },
+        connecting:   { bg: '#ffc107', title: 'Live: WebSocket connecting…' },
+        disconnected: { bg: '#dc3545', title: 'Live: WebSocket disconnected — polling fallback active' },
+    };
+    const cfg = map[status] || map.disconnected;
+    dot.style.background = cfg.bg;
+    dot.title = cfg.title;
+}
+
+// ── Server-state polling fallback ─────────────────────────────────────────────
+
+let statePollInterval = null;
+const POLL_INTERVAL_MS = 8000;
+
+async function pollServerStates() {
+    try {
+        const res = await fetch('/api/server-states');
+        if (!res.ok) return;
+        const data = await res.json();
+        Object.entries(data.servers || {}).forEach(([name, serverData]) => {
+            applyServerUpdate(name, serverData);
+        });
+        scheduleReorder();
+    } catch (_) {
+        // silent — network errors are handled by the WS reconnect logs
+    }
+}
+
+function startStatePoll() {
+    if (statePollInterval) return;
+    // Poll immediately so UI shows updates without delay
+    pollServerStates();
+    statePollInterval = setInterval(pollServerStates, POLL_INTERVAL_MS);
+}
+
+function stopStatePoll() {
+    if (statePollInterval) {
+        clearInterval(statePollInterval);
+        statePollInterval = null;
+    }
+}
+
 function initWebSocket() {
+    if (activeWebSocket && (activeWebSocket.readyState === WebSocket.OPEN || activeWebSocket.readyState === WebSocket.CONNECTING)) {
+        return;
+    }
+
     const wsUrl = window.wsUrl || 'ws://host.docker.internal:8082';
     console.log(`[WS] Connecting to: ${wsUrl}`);
+    setWsStatusDot('connecting');
+    startStatePoll(); // start polling immediately so UI is live even while connecting
 
     const ws = new WebSocket(wsUrl);
+    activeWebSocket = ws;
 
     ws.addEventListener('open', () => {
         console.log('[WS] Connection opened');
+        setWsStatusDot('connected');
+        // Do an immediate poll so we have fresh state right away
+        pollServerStates();
         if (window.myGamertag) {
             console.log(`[WS] Sending initial heartbeat for: ${window.myGamertag}`);
             ws.send(JSON.stringify({ type: 'heartbeat', gamertag: window.myGamertag }));
@@ -517,15 +595,27 @@ function initWebSocket() {
 
     ws.addEventListener('error', e => {
         console.error('[WS] Connection error:', e);
+        setWsStatusDot('disconnected');
     });
 
     ws.addEventListener('close', e => {
+        if (activeWebSocket === ws) {
+            activeWebSocket = null;
+        }
+        if (heartbeatInterval) {
+            clearInterval(heartbeatInterval);
+            heartbeatInterval = null;
+        }
+        setWsStatusDot('disconnected');
         console.warn(`[WS] Connection closed (code=${e.code}), reconnecting in 3s...`);
         setTimeout(initWebSocket, 3000);
     });
 
     if (window.myGamertag) {
-        setInterval(() => {
+        if (heartbeatInterval) {
+            clearInterval(heartbeatInterval);
+        }
+        heartbeatInterval = setInterval(() => {
             if (ws.readyState === WebSocket.OPEN) {
                 console.log(`[WS] Sending heartbeat for: ${window.myGamertag}`);
                 ws.send(JSON.stringify({ type: 'heartbeat', gamertag: window.myGamertag }));
@@ -534,7 +624,13 @@ function initWebSocket() {
     }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+function bootWebSocket() {
     console.log('[APP] DOMContentLoaded — myGamertag:', window.myGamertag, '— wsUrl:', window.wsUrl);
+    if (!document.querySelector('.card[data-server]')) {
+        return;
+    }
     initWebSocket();
-});
+}
+
+document.addEventListener('DOMContentLoaded', bootWebSocket);
+document.addEventListener('turbo:load', bootWebSocket);

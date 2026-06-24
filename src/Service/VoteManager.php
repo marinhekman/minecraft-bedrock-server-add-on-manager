@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Service;
 
 use App\Security\User;
+use Psr\Log\LoggerInterface;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 final class VoteManager
 {
@@ -14,6 +16,8 @@ final class VoteManager
         private readonly ServerMetaReader      $serverMetaReader,
         private readonly ResourceBudgetChecker $budgetChecker,
         private readonly string                $mcDataPath,
+        #[Autowire(service: 'monolog.logger.vote')]
+        private readonly LoggerInterface       $logger,
     ) {}
 
     // ── Casting votes ─────────────────────────────────────────────────────────
@@ -25,14 +29,21 @@ final class VoteManager
 
         if ($currentVote === $serverName) {
             $this->redis->removeVote($gamertag);
+            $this->logger->info('Vote retracted', ['gamertag' => $gamertag, 'server' => $serverName]);
         } else {
             $this->redis->setVote($gamertag, $serverName);
+            $this->logger->info('Vote cast', [
+                'gamertag'     => $gamertag,
+                'server'       => $serverName,
+                'previous_vote' => $currentVote,
+            ]);
         }
     }
 
     public function retractVote(User $user): void
     {
         $this->redis->removeVote($user->getGamertag());
+        $this->logger->info('Vote force-retracted', ['gamertag' => $user->getGamertag()]);
     }
 
     // ── Vote queries ──────────────────────────────────────────────────────────
@@ -122,6 +133,7 @@ final class VoteManager
         }
 
         if ($this->redis->hasCooldown($leader)) {
+            $this->logger->debug('Countdown blocked by cooldown', ['server' => $leader]);
             return null;
         }
 
@@ -131,6 +143,11 @@ final class VoteManager
         // If resources allow starting without stopping anything — go ahead
         // regardless of players on other running servers.
         if ($this->budgetChecker->canStart($profile)) {
+            $this->logger->info('Countdown trigger: server qualifies for start', [
+                'server' => $leader,
+                'votes'  => $leaderVotes,
+                'profile' => $profile,
+            ]);
             return $leader;
         }
 
@@ -138,6 +155,10 @@ final class VoteManager
         // (auto-stop can free the needed slot).
         foreach ($this->redis->getAllServerNames() as $name) {
             if ($this->redis->getPlayerCount($name) > 0) {
+                $this->logger->debug('Countdown blocked: resources occupied and players present', [
+                    'leader'  => $leader,
+                    'blocker' => $name,
+                ]);
                 return null;
             }
         }
@@ -237,7 +258,14 @@ final class VoteManager
     public function confirmStart(string $serverName): bool
     {
         $current = $this->checkAndTrigger();
-        return $current === $serverName;
+        $ok      = $current === $serverName;
+        if (!$ok) {
+            $this->logger->warning('Countdown confirmation failed', [
+                'expected' => $serverName,
+                'current'  => $current,
+            ]);
+        }
+        return $ok;
     }
 
     /**
@@ -247,6 +275,7 @@ final class VoteManager
     {
         $this->redis->clearCountdown($serverName);
         $this->redis->setCooldown($serverName, RedisClient::COUNTDOWN_TTL * 4);
+        $this->logger->info('Server auto-started, cooldown set', ['server' => $serverName]);
     }
 
     /**
@@ -255,6 +284,7 @@ final class VoteManager
     public function onServerAutoStopped(string $serverName): void
     {
         $this->redis->clearStopCountdown($serverName);
+        $this->logger->info('Server auto-stopped', ['server' => $serverName]);
     }
 
     // ── Internal helpers ──────────────────────────────────────────────────────

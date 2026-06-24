@@ -3,12 +3,14 @@
 namespace App\Server;
 
 use App\Service\RedisClient;
-use App\Service\ResourceBudgetChecker;
+use App\Service\ServerStateBuilder;
 use App\Service\VoteManager;
+use Psr\Log\LoggerInterface;
 use Ratchet\ConnectionInterface;
 use Ratchet\MessageComponentInterface;
 use Symfony\Component\Console\Output\NullOutput;
 use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 class WebSocketServer implements MessageComponentInterface
 {
@@ -18,9 +20,11 @@ class WebSocketServer implements MessageComponentInterface
     private OutputInterface $output;
 
     public function __construct(
-        private readonly RedisClient           $redisClient,
-        private readonly VoteManager           $voteManager,
-        private readonly ResourceBudgetChecker $budgetChecker,
+        private readonly RedisClient        $redisClient,
+        private readonly VoteManager        $voteManager,
+        private readonly ServerStateBuilder $serverStateBuilder,
+        #[Autowire(service: 'monolog.logger.websocket')]
+        private readonly LoggerInterface    $logger,
     ) {
         $this->clients = new \SplObjectStorage();
         $this->output  = new NullOutput();
@@ -35,6 +39,7 @@ class WebSocketServer implements MessageComponentInterface
     {
         $this->clients->attach($conn);
         $this->output->writeln('<info>WebSocket client connected: ' . ($conn->resourceId ?? '?') . '</info>');
+        $this->logger->info('WebSocket client connected', ['resourceId' => $conn->resourceId ?? null, 'total' => count($this->clients)]);
 
         $this->sendToConnection($conn, [
             'type'    => 'init',
@@ -61,11 +66,13 @@ class WebSocketServer implements MessageComponentInterface
     {
         $this->clients->detach($conn);
         $this->output->writeln('<info>WebSocket client disconnected: ' . ($conn->resourceId ?? '?') . '</info>');
+        $this->logger->info('WebSocket client disconnected', ['resourceId' => $conn->resourceId ?? null, 'remaining' => count($this->clients)]);
     }
 
     public function onError(ConnectionInterface $conn, \Exception $e): void
     {
         $this->output->writeln('<error>WebSocket error: ' . $e->getMessage() . '</error>');
+        $this->logger->error('WebSocket error', ['error' => $e->getMessage(), 'resourceId' => $conn->resourceId ?? null]);
         $conn->close();
     }
 
@@ -127,63 +134,17 @@ class WebSocketServer implements MessageComponentInterface
 
     private function buildServerState(): array
     {
-        $state = [];
-        foreach ($this->redisClient->getAllServerNames() as $name) {
-            $state[$name] = $this->buildSingleServerState($name);
-        }
-        return $state;
+        return $this->serverStateBuilder->buildAll();
     }
 
     private function buildSingleServerState(string $name): array
     {
-        $server    = $this->redisClient->getServer($name);
-        $countdown = $this->redisClient->getCountdown($name);
-
-        return [
-            'server'             => $server,
-            'playerCount'        => $this->redisClient->getPlayerCount($name),
-            'loadedUuids'        => $this->redisClient->getLoadedUuids($name),
-            'stats'              => $this->redisClient->getStats($name),
-            'memoryProfile'      => $server['memoryProfile'] ?? 'medium',
-            'votes'              => [
-                'count'   => $this->voteManager->getActiveVoteCount($name),
-                'voters'  => $this->voteManager->getActiveVoters($name),
-            ],
-            'stopCountdownUntil' => $this->resolveStopCountdownUntil($name, $server),
-            'countdownUntil'     => $countdown !== null
-                ? $countdown + RedisClient::COUNTDOWN_TTL
-                : null,
-            'blocked'            => $this->getBlockingReason($name, $server),
-            'starting'           => $this->redisClient->isStarting($name),
-        ];
+        return $this->serverStateBuilder->buildOne($name);
     }
 
     private function resolveStopCountdownUntil(string $name, ?array $server): ?int
     {
-        if (!($server['running'] ?? false)) {
-            return null;
-        }
-
-        $stopStartedAt = $this->redisClient->getStopCountdown($name);
-        if ($stopStartedAt === null) {
-            return null;
-        }
-
-        return $stopStartedAt + RedisClient::COUNTDOWN_TTL;
-    }
-
-    /**
-     * Returns the blocking reason for a stopped server that has votes but cannot start yet.
-     *
-     * Values:
-     *   null                — no block (can start, or no votes)
-     *   'players'           — a running server has players online
-     *   'players_leaving'   — players recently left but server hasn't stopped yet
-     *   'resources'         — not enough resources, no stop in progress
-     *   'resources_stopping'— not enough resources but a stop countdown is active
-     */
-    private function getBlockingReason(string $name, ?array $server): ?string
-    {
-        return $this->voteManager->getBlockingReason($name);
+        // Kept for interface compatibility — delegated in ServerStateBuilder
+        return null;
     }
 }

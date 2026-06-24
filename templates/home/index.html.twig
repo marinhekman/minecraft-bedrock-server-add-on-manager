@@ -75,6 +75,7 @@
             <div class="card shadow-sm mb-4 {{ cardBg }}"
                  data-server="{{ server.name }}"
                  data-vote-count="{{ data.voteCount }}"
+                 data-last-started-at="{{ server.startedAt ?? '' }}"
                  data-csrf-token="{{ csrf_token('vote-' ~ server.name) }}">
 
                 {# Card header #}
@@ -105,9 +106,9 @@
                             <span class="badge bg-secondary">:{{ displayPort }}</span>
                         {% endif %}
                         {% if server.isRunning %}
-                            <span class="badge bg-success">{{ '● Running'|trans }}</span>
+                            <span class="badge bg-success server-status-badge">{{ '● Running'|trans }}</span>
                         {% else %}
-                            <span class="badge bg-danger">{{ '● Stopped'|trans }}</span>
+                            <span class="badge bg-danger server-status-badge">{{ '● Stopped'|trans }}</span>
                         {% endif %}
                         <span class="badge bg-dark stat-uptime" title="{{ 'Uptime'|trans }}"
                               style="{{ server.isRunning ? '' : 'display:none' }}">UP –</span>
