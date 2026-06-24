@@ -4,6 +4,13 @@
 
 {% block body %}
 
+    <div class="d-flex justify-content-end mb-3">
+        <span class="badge bg-light text-dark border d-inline-flex align-items-center gap-1" title="Live: WebSocket status">
+            <span data-ws-status-dot style="width:9px;height:9px;border-radius:50%;background:#6c757d;display:inline-block;flex-shrink:0"></span>
+            <span>Live</span>
+        </span>
+    </div>
+
     {# Host stats card (always show) #}
     <div class="card shadow-sm mb-4 bg-dark text-white" id="hostStatsCard">
         <div class="card-body">
@@ -111,8 +118,9 @@
                         {% if displayPort %}
                             <span class="badge bg-secondary">:{{ displayPort }}</span>
                         {% endif %}
-                        <span class="badge {{ server.isRunning ? 'bg-success' : 'bg-danger' }} server-status-badge">
-                            {{ server.isRunning ? '● Running' : '● Stopped' }}
+                        {% set awaitingStartup = (not server.isRunning) and (server.containerStatus in ['created', 'restarting', 'starting']) %}
+                        <span class="badge {{ server.isRunning ? 'bg-success' : (awaitingStartup ? 'bg-warning text-dark' : 'bg-danger') }} server-status-badge">
+                            {{ server.isRunning ? '● Running' : (awaitingStartup ? '⏳ Awaiting startup' : '● Stopped') }}
                         </span>
                         <span class="badge bg-dark stat-uptime" title="Uptime" style="{{ server.isRunning ? '' : 'display:none' }}">UP –</span>
                         <span class="badge bg-dark stat-cpu" title="CPU usage" style="{{ server.isRunning ? '' : 'display:none' }}">CPU –</span>

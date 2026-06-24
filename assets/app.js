@@ -232,6 +232,9 @@ function applyServerUpdate(serverName, data) {
 
     // Update running/stopped badge
     const isStarting = data.starting ?? false;
+    const statusRaw = String(serverData?.containerStatus ?? '').toLowerCase();
+    const hasContainerStartupState = ['created', 'restarting', 'starting'].includes(statusRaw);
+    const isAwaitingStartup = data.awaitingStartup ?? (!isRunning && (isStarting || hasContainerStartupState));
     if (serverData) {
         const runningBadge = card.querySelector('.server-status-badge')
             || card.querySelector('.card-header .badge.bg-success, .card-header .badge.bg-danger, .card-header .badge.bg-warning');
@@ -239,9 +242,9 @@ function applyServerUpdate(serverName, data) {
             if (isRunning) {
                 runningBadge.className   = 'badge bg-success';
                 runningBadge.textContent = window.i18n?.running  ?? '● Running';
-            } else if (isStarting) {
+            } else if (isAwaitingStartup) {
                 runningBadge.className   = 'badge bg-warning text-dark';
-                runningBadge.textContent = window.i18n?.starting ?? '⏳ Starting...';
+                runningBadge.textContent = window.i18n?.awaiting_startup ?? '⏳ Awaiting startup';
             } else {
                 runningBadge.className   = 'badge bg-danger';
                 runningBadge.textContent = window.i18n?.stopped  ?? '● Stopped';
@@ -340,7 +343,7 @@ function applyServerUpdate(serverName, data) {
     let blockingBlock  = card.querySelector('.blocking-block');
     const voteSection  = card.querySelector('.vote-section');
 
-    if (blocked && !isRunning && !isStarting && votes.count > 0) {
+    if (blocked && !isRunning && !isAwaitingStartup && votes.count > 0) {
         const i18n     = window.i18n || {};
         const messages = {
             players:            i18n.players            ?? '👥 Another server has players online. This server will start automatically once they leave.',
@@ -391,7 +394,7 @@ function applyServerUpdate(serverName, data) {
     const countdownUntil = data.countdownUntil ?? null;
     let countdownBlock   = card.querySelector('.countdown-block');
 
-    if (countdownUntil && !isRunning && !isStarting) {
+    if (countdownUntil && !isRunning && !isAwaitingStartup) {
         if (!countdownBlock) {
             const block = document.createElement('div');
             block.className = 'alert alert-success py-2 mb-3 countdown-block';
@@ -501,20 +504,22 @@ let heartbeatInterval = null;
 // ── WebSocket status indicator ────────────────────────────────────────────────
 
 /**
- * Update the small dot on the Logs FAB to reflect live WebSocket state.
+ * Update all WebSocket status dots to reflect live connection state.
  * Values: 'connected' | 'connecting' | 'disconnected'
  */
 function setWsStatusDot(status) {
-    const dot = document.getElementById('ws-status-dot');
-    if (!dot) return;
+    const dots = Array.from(document.querySelectorAll('[data-ws-status-dot], #ws-status-dot'));
+    if (!dots.length) return;
     const map = {
         connected:    { bg: '#198754', title: 'Live: WebSocket connected' },
         connecting:   { bg: '#ffc107', title: 'Live: WebSocket connecting…' },
         disconnected: { bg: '#dc3545', title: 'Live: WebSocket disconnected — polling fallback active' },
     };
     const cfg = map[status] || map.disconnected;
-    dot.style.background = cfg.bg;
-    dot.title = cfg.title;
+    dots.forEach(dot => {
+        dot.style.background = cfg.bg;
+        dot.title = cfg.title;
+    });
 }
 
 // ── Server-state polling fallback ─────────────────────────────────────────────

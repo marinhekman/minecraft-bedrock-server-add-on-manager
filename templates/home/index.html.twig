@@ -14,6 +14,10 @@
             <h1 class="mb-0">🎮 {{ app_title|raw }}</h1>
         </div>
         <div class="col-auto d-flex align-items-center gap-2">
+            <span class="badge bg-light text-dark border d-inline-flex align-items-center gap-1" title="Live: WebSocket status">
+                <span data-ws-status-dot style="width:9px;height:9px;border-radius:50%;background:#6c757d;display:inline-block;flex-shrink:0"></span>
+                <span>Live</span>
+            </span>
             {% if is_granted('ROLE_ADMIN') or is_granted('ROLE_USER') %}
                 <img src="{{ app.user.avatarPath }}"
                      alt="{{ app.user.gamertag }}"
@@ -105,8 +109,11 @@
                         {% if displayPort %}
                             <span class="badge bg-secondary">:{{ displayPort }}</span>
                         {% endif %}
+                        {% set awaitingStartup = (not server.isRunning) and (server.containerStatus in ['created', 'restarting', 'starting']) %}
                         {% if server.isRunning %}
                             <span class="badge bg-success server-status-badge">{{ '● Running'|trans }}</span>
+                        {% elseif awaitingStartup %}
+                            <span class="badge bg-warning text-dark server-status-badge">{{ '⏳ Awaiting startup'|trans }}</span>
                         {% else %}
                             <span class="badge bg-danger server-status-badge">{{ '● Stopped'|trans }}</span>
                         {% endif %}
@@ -288,6 +295,7 @@
         log_in_to_vote:     {{ 'Log in to vote'|trans|json_encode|raw }},
         running:            {{ '● Running'|trans|json_encode|raw }},
         stopped:            {{ '● Stopped'|trans|json_encode|raw }},
+        awaiting_startup:   {{ '⏳ Awaiting startup'|trans|json_encode|raw }},
         starting:           {{ '⏳ Starting...'|trans|json_encode|raw }},
         vote:               {{ 'vote'|trans|json_encode|raw }},
         votes:              {{ 'votes'|trans|json_encode|raw }},

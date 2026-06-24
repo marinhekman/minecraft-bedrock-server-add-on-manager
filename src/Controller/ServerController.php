@@ -81,6 +81,8 @@ class ServerController extends AbstractController
         }
 
         try {
+            // If an admin stops while a startup is in-flight, remove the pending startup badge.
+            $this->redisClient->clearStarting($serverName);
             $this->dockerClient->stopContainer($server->containerId);
             $this->logger->info('Admin stopped server', ['server' => $serverName, 'admin' => $this->getUser()?->getUserIdentifier()]);
             $this->addFlash('success', $this->translator->trans('Server "%name%" is stopping.', ['%name%' => $server->containerName ?? $serverName]));
@@ -107,6 +109,9 @@ class ServerController extends AbstractController
         try {
             $containerId = $this->ensureContainerExists($serverName, $server);
 
+            // Set transitional state immediately so UI can show "awaiting startup" before the next monitor sync.
+            $this->redisClient->setStarting($serverName);
+
             if ($server->isRunning()) {
                 $this->dockerClient->restartContainer($containerId);
                 $this->logger->info('Admin restarted server', ['server' => $serverName, 'admin' => $this->getUser()?->getUserIdentifier()]);
@@ -117,6 +122,7 @@ class ServerController extends AbstractController
 
             $this->addFlash('success', $this->translator->trans('Server "%name%" is starting.', ['%name%' => $server->containerName ?? $serverName]));
         } catch (\RuntimeException $e) {
+            $this->redisClient->clearStarting($serverName);
             $this->logger->error('Admin start/restart failed', ['server' => $serverName, 'error' => $e->getMessage()]);
             $this->addFlash('error', $this->translator->trans('Failed to start server: %message%', ['%message%' => $e->getMessage()]));
         }

@@ -47,6 +47,8 @@ class WebSocketServerCommand extends Command
 
         $this->monitor->start();
 
+        // Keep vote-driven countdowns responsive without waiting for the full scan cycle.
+        $loop->addPeriodicTimer(2, fn() => $this->monitor->evaluateCountdown());
         $loop->addPeriodicTimer(30, fn() => $this->monitor->scan());
         $loop->addPeriodicTimer(10, fn() => $this->monitor->refreshStats());
 

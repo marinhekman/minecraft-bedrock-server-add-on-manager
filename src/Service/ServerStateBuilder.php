@@ -1,6 +1,5 @@
 <?php
 
-declare(strict_types=1);
 
 namespace App\Service;
 
@@ -38,6 +37,7 @@ final class ServerStateBuilder
     {
         $server    = $this->redis->getServer($name);
         $countdown = $this->redis->getCountdown($name);
+        $starting  = $this->redis->isStarting($name);
 
         return [
             'server'             => $server,
@@ -54,7 +54,8 @@ final class ServerStateBuilder
                 ? $countdown + RedisClient::COUNTDOWN_TTL
                 : null,
             'blocked'            => $this->voteManager->getBlockingReason($name),
-            'starting'           => $this->redis->isStarting($name),
+            'starting'           => $starting,
+            'awaitingStartup'    => $this->resolveAwaitingStartup($server, $starting),
         ];
     }
 
@@ -65,6 +66,21 @@ final class ServerStateBuilder
         }
         $stopStartedAt = $this->redis->getStopCountdown($name);
         return $stopStartedAt !== null ? $stopStartedAt + RedisClient::COUNTDOWN_TTL : null;
+    }
+
+    private function resolveAwaitingStartup(?array $server, bool $starting): bool
+    {
+        if (($server['running'] ?? false) === true) {
+            return false;
+        }
+
+        if ($starting) {
+            return true;
+        }
+
+        $status = strtolower((string) ($server['containerStatus'] ?? ''));
+
+        return in_array($status, ['created', 'restarting', 'starting'], true);
     }
 }
 
