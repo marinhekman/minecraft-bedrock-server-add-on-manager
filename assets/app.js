@@ -500,6 +500,7 @@ function reorderCards() {
 
 let activeWebSocket = null;
 let heartbeatInterval = null;
+let currentWsStatus = 'disconnected';
 
 // ── WebSocket status indicator ────────────────────────────────────────────────
 
@@ -510,6 +511,7 @@ let heartbeatInterval = null;
 function setWsStatusDot(status) {
     const dots = Array.from(document.querySelectorAll('[data-ws-status-dot], #ws-status-dot'));
     if (!dots.length) return;
+    currentWsStatus = status;
     const map = {
         connected:    { bg: '#198754', title: 'Live: WebSocket connected' },
         connecting:   { bg: '#ffc107', title: 'Live: WebSocket connecting…' },
@@ -639,3 +641,9 @@ function bootWebSocket() {
 
 document.addEventListener('DOMContentLoaded', bootWebSocket);
 document.addEventListener('turbo:load', bootWebSocket);
+
+// Re-sync WS status dots on Turbo page updates to prevent greyed-out indicators
+document.addEventListener('turbo:load', () => {
+    setWsStatusDot(currentWsStatus);
+});
+
