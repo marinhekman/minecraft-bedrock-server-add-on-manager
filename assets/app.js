@@ -217,6 +217,17 @@ document.addEventListener('turbo:load', startCountdownTicker);
 
 // ── WebSocket — all live updates ──────────────────────────────────────────────
 
+function getMemoryProfileBadgeClass(profile) {
+    switch (profile) {
+        case 'low':
+            return 'bg-secondary';
+        case 'high':
+            return 'bg-danger';
+        default:
+            return 'bg-info text-dark';
+    }
+}
+
 function applyServerUpdate(serverName, data) {
     console.log(`[WS] applyServerUpdate: ${serverName}`, data);
 
@@ -229,6 +240,19 @@ function applyServerUpdate(serverName, data) {
     const votes      = data.votes ?? { count: 0, voters: [] };
     const serverData = data.server;
     const isRunning  = serverData && serverData.running;
+    const memoryProfile = String(data.memoryProfile ?? serverData?.memoryProfile ?? 'medium').toLowerCase();
+
+    const memoryProfileBadge = card.querySelector('.memory-profile-badge');
+    if (memoryProfileBadge) {
+        memoryProfileBadge.dataset.profile = memoryProfile;
+        memoryProfileBadge.className = `badge border-0 memory-profile-badge ${getMemoryProfileBadgeClass(memoryProfile)}`;
+        memoryProfileBadge.textContent = `🧠 ${memoryProfile.toUpperCase()}`;
+    }
+
+    const memoryProfileSelect = card.querySelector('.memory-profile-select');
+    if (memoryProfileSelect && ['low', 'medium', 'high'].includes(memoryProfile)) {
+        memoryProfileSelect.value = memoryProfile;
+    }
 
     // Update running/stopped badge
     const isStarting = data.starting ?? false;

@@ -167,6 +167,81 @@ class ServerController extends AbstractController
         return $this->redirectToRoute('admin_dashboard');
     }
 
+    #[Route('/profile', name: 'server_profile_update', methods: ['POST'])]
+    public function updateProfile(string $serverName, Request $request): RedirectResponse
+    {
+        $this->denyAccessUnlessGranted('ROLE_ADMIN');
+
+        $server = $this->serverRegistry->get($serverName);
+        if ($server === null) {
+            $this->addFlash('error', $this->translator->trans('Server "%name%" not found.', ['%name%' => $serverName]));
+            return $this->redirectToRoute('admin_dashboard');
+        }
+
+        $newProfile = strtolower(trim((string) $request->request->get('memory_profile', '')));
+        if (!in_array($newProfile, ['low', 'medium', 'high'], true)) {
+            $this->addFlash('error', $this->translator->trans('Invalid memory profile.'));
+            return $this->redirectToRoute('admin_dashboard');
+        }
+
+        $currentProfile = in_array($server->memoryProfile, ['low', 'medium', 'high'], true)
+            ? $server->memoryProfile
+            : 'medium';
+
+        if ($newProfile === $currentProfile) {
+            $this->addFlash('info', $this->translator->trans('Memory profile for "%server%" is already %profile%.', [
+                '%server%' => $serverName,
+                '%profile%' => strtoupper($newProfile),
+            ]));
+            return $this->redirectToRoute('admin_dashboard');
+        }
+
+        try {
+            if ($server->containerId !== null) {
+                if ($server->isRunning()) {
+                    try {
+                        $this->dockerClient->stopContainer($server->containerId);
+                    } catch (\RuntimeException) {
+                        // Continue to forced remove below.
+                    }
+                }
+
+                $this->dockerClient->removeContainer($server->containerId, true);
+            }
+
+            $newContainerId = $this->serverContainerManager->ensureContainerExists(
+                $serverName,
+                $server->dataPath,
+                $newProfile,
+            );
+
+            $this->redisClient->clearStarting($serverName);
+
+            $this->logger->info('Admin changed server memory profile', [
+                'server' => $serverName,
+                'from' => $currentProfile,
+                'to' => $newProfile,
+                'containerId' => $newContainerId,
+                'admin' => $this->getUser()?->getUserIdentifier(),
+            ]);
+
+            $this->addFlash('success', $this->translator->trans(
+                'Memory profile for "%server%" changed from %from% to %to%. Container recreated (not started).',
+                ['%server%' => $serverName, '%from%' => strtoupper($currentProfile), '%to%' => strtoupper($newProfile)],
+            ));
+        } catch (\RuntimeException $e) {
+            $this->logger->error('Admin memory profile update failed', [
+                'server' => $serverName,
+                'from' => $currentProfile,
+                'to' => $newProfile,
+                'error' => $e->getMessage(),
+            ]);
+            $this->addFlash('error', $this->translator->trans('Failed to change memory profile: %message%', ['%message%' => $e->getMessage()]));
+        }
+
+        return $this->redirectToRoute('admin_dashboard');
+    }
+
     private function ensureContainerExists(string $serverName, ServerInstance $server): string
     {
         if ($server->containerId !== null) {

@@ -100,6 +100,9 @@
     {% if serverData is not empty %}
         {% for data in serverData %}
             {% set server = data.server %}
+            {% set serverDomId = server.name|replace({'-': '_'}) %}
+            {% set profile = server.memoryProfile|default('medium') %}
+            {% set profileBadgeClass = profile == 'high' ? 'bg-danger' : (profile == 'low' ? 'bg-secondary' : 'bg-info text-dark') %}
             <div class="card shadow-sm mb-4"
                 data-server="{{ server.name }}"
                 data-last-started-at="{{ server.startedAt ?? '' }}">
@@ -122,6 +125,15 @@
                         <span class="badge {{ server.isRunning ? 'bg-success' : (awaitingStartup ? 'bg-warning text-dark' : 'bg-danger') }} server-status-badge">
                             {{ server.isRunning ? '● Running' : (awaitingStartup ? '⏳ Awaiting startup' : '● Stopped') }}
                         </span>
+                        <button type="button"
+                                class="badge border-0 {{ profileBadgeClass }} memory-profile-badge"
+                                data-profile="{{ profile }}"
+                                data-bs-toggle="modal"
+                                data-bs-target="#memoryProfileModal{{ serverDomId }}"
+                                title="{{ 'Change memory profile'|trans }}"
+                                style="cursor:pointer">
+                            🧠 {{ profile|upper }}
+                        </button>
                         <span class="badge bg-dark stat-uptime" title="Uptime" style="{{ server.isRunning ? '' : 'display:none' }}">UP –</span>
                         <span class="badge bg-dark stat-cpu" title="CPU usage" style="{{ server.isRunning ? '' : 'display:none' }}">CPU –</span>
                         <span class="badge bg-dark stat-mem" title="Memory usage" style="{{ server.isRunning ? '' : 'display:none' }}">MEM –</span>
@@ -171,6 +183,34 @@
                                     <button type="submit" class="btn btn-danger btn-sm">{{ 'Delete permanently'|trans }}</button>
                                 </form>
                             </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal fade" id="memoryProfileModal{{ serverDomId }}" tabindex="-1">
+                    <div class="modal-dialog modal-sm">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title">{{ 'Change memory profile'|trans }}</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                            </div>
+                            <form method="post" action="{{ path('server_profile_update', {serverName: server.name}) }}">
+                                <div class="modal-body">
+                                    <p class="mb-2 small text-muted">
+                                        {{ 'Changing profile recreates the Docker container for this server.'|trans }}
+                                    </p>
+                                    <label for="memoryProfileEdit{{ serverDomId }}" class="form-label">{{ 'Memory profile'|trans }}</label>
+                                    <select id="memoryProfileEdit{{ serverDomId }}" name="memory_profile" class="form-select memory-profile-select">
+                                        <option value="low" {{ profile == 'low' ? 'selected' : '' }}>{{ 'Low (1GB)'|trans }}</option>
+                                        <option value="medium" {{ profile == 'medium' ? 'selected' : '' }}>{{ 'Medium (2GB)'|trans }}</option>
+                                        <option value="high" {{ profile == 'high' ? 'selected' : '' }}>{{ 'High (4GB)'|trans }}</option>
+                                    </select>
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">{{ 'Cancel'|trans }}</button>
+                                    <button type="submit" class="btn btn-primary btn-sm">{{ 'Apply profile'|trans }}</button>
+                                </div>
+                            </form>
                         </div>
                     </div>
                 </div>
