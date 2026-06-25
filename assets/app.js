@@ -257,7 +257,7 @@ function applyServerUpdate(serverName, data) {
     // Update running/stopped badge
     const isStarting = data.starting ?? false;
     const statusRaw = String(serverData?.containerStatus ?? '').toLowerCase();
-    const hasContainerStartupState = ['created', 'restarting', 'starting'].includes(statusRaw);
+    const hasContainerStartupState = ['restarting', 'starting'].includes(statusRaw);
     const isAwaitingStartup = data.awaitingStartup ?? (!isRunning && (isStarting || hasContainerStartupState));
     if (serverData) {
         const runningBadge = card.querySelector('.server-status-badge')

@@ -109,7 +109,7 @@
                         {% if displayPort %}
                             <span class="badge bg-secondary">:{{ displayPort }}</span>
                         {% endif %}
-                        {% set awaitingStartup = (not server.isRunning) and (server.containerStatus in ['created', 'restarting', 'starting']) %}
+                        {% set awaitingStartup = (not server.isRunning) and (server.containerStatus in ['restarting', 'starting']) %}
                         {% if server.isRunning %}
                             <span class="badge bg-success server-status-badge">{{ '● Running'|trans }}</span>
                         {% elseif awaitingStartup %}

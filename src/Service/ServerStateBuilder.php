@@ -80,7 +80,7 @@ final class ServerStateBuilder
 
         $status = strtolower((string) ($server['containerStatus'] ?? ''));
 
-        return in_array($status, ['created', 'restarting', 'starting'], true);
+        return in_array($status, ['restarting', 'starting'], true);
     }
 }
 
