@@ -258,20 +258,56 @@ final class VoteManager
         $runningProfiles = $this->budgetChecker->getRunningProfiles();
         $toStop          = [];
 
+        $this->logger->debug('Auto-stop candidate evaluation started', [
+            'leader' => $leader,
+            'leaderProfile' => $leaderProfile,
+            'runningProfiles' => $runningProfiles,
+            'candidates' => $candidates,
+        ]);
+
         foreach ($candidates as $candidate) {
             $toStop[]        = $candidate['name'];
-            $runningProfiles = array_values(array_filter(
-                $runningProfiles,
-                fn($p) => $p !== $candidate['profile'],
-            ));
+
+            // Remove exactly one matching profile instance to simulate stopping
+            // this candidate server (not every server with that profile).
+            $removedProfileInstance = false;
+            $key = array_search($candidate['profile'], $runningProfiles, true);
+            if ($key !== false) {
+                unset($runningProfiles[$key]);
+                $runningProfiles = array_values($runningProfiles);
+                $removedProfileInstance = true;
+            }
 
             // Re-check with simulated running profiles
-            if ($this->budgetChecker->canStartWithProfiles($leaderProfile, $runningProfiles)) {
+            $canStart = $this->budgetChecker->canStartWithProfiles($leaderProfile, $runningProfiles);
+
+            $this->logger->debug('Auto-stop simulation step evaluated', [
+                'leader' => $leader,
+                'candidateStopped' => $candidate,
+                'removedProfileInstance' => $removedProfileInstance,
+                'simulatedRunningProfiles' => $runningProfiles,
+                'canStartAfterStopSet' => $canStart,
+                'toStop' => $toStop,
+            ]);
+
+            if ($canStart) {
+                $this->logger->info('Auto-stop selection computed', [
+                    'leader' => $leader,
+                    'leaderProfile' => $leaderProfile,
+                    'toStop' => $toStop,
+                    'simulatedRunningProfiles' => $runningProfiles,
+                ]);
                 return $toStop;
             }
         }
 
         // Cannot free enough resources
+        $this->logger->debug('Auto-stop evaluation found no valid stop set', [
+            'leader' => $leader,
+            'leaderProfile' => $leaderProfile,
+            'attemptedCandidates' => $candidates,
+        ]);
+
         return [];
     }
 
