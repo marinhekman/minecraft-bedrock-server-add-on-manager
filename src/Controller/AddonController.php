@@ -7,6 +7,7 @@ use App\Service\AddonScanner;
 use App\Service\DependencyChecker;
 use App\Service\ServerRegistry;
 use App\Service\WorldPacksManager;
+use Psr\Log\LoggerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -21,6 +22,7 @@ class AddonController extends AbstractController
         private readonly WorldPacksManager $worldPacksManager,
         private readonly AddonInstaller    $addonInstaller,
         private readonly DependencyChecker $dependencyChecker,
+        private readonly LoggerInterface   $logger,
     ) {}
 
     #[Route('/install', name: 'addon_install', methods: ['POST'])]
@@ -39,6 +41,13 @@ class AddonController extends AbstractController
         }
 
         try {
+            $this->logger->info('Received add-on upload request.', [
+                'server' => $server->name,
+                'original_filename' => $file->getClientOriginalName(),
+                'uploaded_size' => $file->getSize(),
+                'mime_type' => $file->getClientMimeType(),
+            ]);
+
             $installed = $this->addonInstaller->install(
                 $server,
                 $file->getPathname(),
@@ -57,6 +66,11 @@ class AddonController extends AbstractController
                 $this->addFlash('warning', $warning);
             }
         } catch (\RuntimeException $e) {
+            $this->logger->error('Add-on installation failed in controller.', [
+                'server' => $server->name,
+                'original_filename' => $file->getClientOriginalName(),
+                'error' => $e->getMessage(),
+            ]);
             $this->addFlash('error', $e->getMessage());
         }
 

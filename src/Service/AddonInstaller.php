@@ -5,6 +5,7 @@ namespace App\Service;
 use App\Model\AddonManifest;
 use App\Model\AddonType;
 use App\Model\ServerInstance;
+use Psr\Log\LoggerInterface;
 
 class AddonInstaller
 {
@@ -17,6 +18,7 @@ class AddonInstaller
 
     public function __construct(
         private readonly ManifestParser $manifestParser,
+        private readonly LoggerInterface $logger,
     ) {}
 
     /**
@@ -28,6 +30,13 @@ class AddonInstaller
     public function install(ServerInstance $server, string $uploadedFilePath, string $originalFilename): array
     {
         $ext = strtolower(pathinfo($originalFilename, PATHINFO_EXTENSION));
+
+        $this->logger->info('Starting add-on installation.', [
+            'server' => $server->name,
+            'file_name' => $originalFilename,
+            'extension' => $ext,
+            'temp_path' => $uploadedFilePath,
+        ]);
 
         try {
             return match ($ext) {
@@ -53,6 +62,12 @@ class AddonInstaller
 
         $tmpDir = sys_get_temp_dir() . '/mcaddon_' . uniqid();
         mkdir($tmpDir, 0775, true);
+
+        $this->logger->debug('Extracting mcaddon archive.', [
+            'server' => $server->name,
+            'archive' => basename($path),
+            'tmp_dir' => $tmpDir,
+        ]);
 
         try {
             $zip->extractTo($tmpDir);
@@ -81,11 +96,20 @@ class AddonInstaller
                         }
                         if (file_exists($packEntry->getPathname() . '/manifest.json')) {
                             try {
+                                $this->logger->debug('Installing behaviour pack from container folder.', [
+                                    'server' => $server->name,
+                                    'pack_dir' => $packEntry->getPathname(),
+                                ]);
                                 $installed = array_merge(
                                     $installed,
                                     $this->installPackFolder($server, $packEntry->getPathname())
                                 );
                             } catch (\RuntimeException $e) {
+                                $this->logger->warning('Failed installing behaviour pack from container folder.', [
+                                    'server' => $server->name,
+                                    'pack_dir' => $packEntry->getPathname(),
+                                    'error' => $e->getMessage(),
+                                ]);
                                 $errors[] = $e->getMessage();
                             }
                         }
@@ -97,11 +121,20 @@ class AddonInstaller
                         }
                         if (file_exists($packEntry->getPathname() . '/manifest.json')) {
                             try {
+                                $this->logger->debug('Installing resource pack from container folder.', [
+                                    'server' => $server->name,
+                                    'pack_dir' => $packEntry->getPathname(),
+                                ]);
                                 $installed = array_merge(
                                     $installed,
                                     $this->installPackFolder($server, $packEntry->getPathname())
                                 );
                             } catch (\RuntimeException $e) {
+                                $this->logger->warning('Failed installing resource pack from container folder.', [
+                                    'server' => $server->name,
+                                    'pack_dir' => $packEntry->getPathname(),
+                                    'error' => $e->getMessage(),
+                                ]);
                                 $errors[] = $e->getMessage();
                             }
                         }
@@ -113,8 +146,17 @@ class AddonInstaller
             if (empty($installed) && empty($errors)) {
                 foreach (glob($tmpDir . '/*.mcpack') as $mcpack) {
                     try {
+                        $this->logger->debug('Installing nested mcpack from mcaddon.', [
+                            'server' => $server->name,
+                            'mcpack' => $mcpack,
+                        ]);
                         $installed = array_merge($installed, $this->installMcPack($server, $mcpack));
                     } catch (\RuntimeException $e) {
+                        $this->logger->warning('Failed installing nested mcpack from mcaddon.', [
+                            'server' => $server->name,
+                            'mcpack' => $mcpack,
+                            'error' => $e->getMessage(),
+                        ]);
                         $errors[] = $e->getMessage();
                     }
                 }
@@ -128,19 +170,54 @@ class AddonInstaller
                     }
                     if (file_exists($entry->getPathname() . '/manifest.json')) {
                         try {
+                            $this->logger->debug('Installing pack from top-level folder in mcaddon.', [
+                                'server' => $server->name,
+                                'pack_dir' => $entry->getPathname(),
+                            ]);
                             $installed = array_merge(
                                 $installed,
                                 $this->installPackFolder($server, $entry->getPathname())
                             );
                         } catch (\RuntimeException $e) {
+                            $this->logger->warning('Failed installing top-level pack folder from mcaddon.', [
+                                'server' => $server->name,
+                                'pack_dir' => $entry->getPathname(),
+                                'error' => $e->getMessage(),
+                            ]);
                             $errors[] = $e->getMessage();
                         }
                     }
                 }
             }
 
+            // Case 2b: .mcaddon contains one wrapper folder (or deeper nesting)
+            // and manifests are not directly in the top-level pack folders.
+            if (empty($installed) && empty($errors)) {
+                $packDirs = $this->findManifestDirectoriesRecursively($tmpDir);
+                foreach ($packDirs as $packDir) {
+                    try {
+                        $this->logger->debug('Installing pack from recursively discovered manifest.', [
+                            'server' => $server->name,
+                            'pack_dir' => $packDir,
+                        ]);
+                        $installed = array_merge($installed, $this->installPackFolder($server, $packDir));
+                    } catch (\RuntimeException $e) {
+                        $this->logger->warning('Failed installing recursively discovered pack folder.', [
+                            'server' => $server->name,
+                            'pack_dir' => $packDir,
+                            'error' => $e->getMessage(),
+                        ]);
+                        $errors[] = $e->getMessage();
+                    }
+                }
+            }
+
             // Case 3: .mcaddon is itself a single pack (manifest.json at root)
             if (empty($installed) && empty($errors)) {
+                $this->logger->debug('Trying root folder as single-pack mcaddon.', [
+                    'server' => $server->name,
+                    'tmp_dir' => $tmpDir,
+                ]);
                 $installed = $this->installPackFolder($server, $tmpDir);
             }
 
@@ -149,12 +226,29 @@ class AddonInstaller
         }
 
         if (!empty($errors) && empty($installed)) {
+            $this->logger->error('mcaddon installation failed.', [
+                'server' => $server->name,
+                'errors' => $errors,
+            ]);
             throw new \RuntimeException(implode(' / ', $errors));
+        }
+
+        if (!empty($errors)) {
+            $this->logger->warning('mcaddon installation partially succeeded.', [
+                'server' => $server->name,
+                'installed' => $installed,
+                'errors' => $errors,
+            ]);
         }
 
         foreach ($errors as $error) {
             $installed[] = '⚠️ ' . $error;
         }
+
+        $this->logger->info('mcaddon installation completed.', [
+            'server' => $server->name,
+            'installed_entries' => $installed,
+        ]);
 
         return $installed;
     }
@@ -162,6 +256,11 @@ class AddonInstaller
     /** @return string[] */
     private function installMcPack(ServerInstance $server, string $path): array
     {
+        $this->logger->debug('Installing mcpack archive.', [
+            'server' => $server->name,
+            'archive' => basename($path),
+        ]);
+
         $zip = $this->openZip($path);
 
         $tmpDir = sys_get_temp_dir() . '/mcpack_' . uniqid();
@@ -190,6 +289,16 @@ class AddonInstaller
         $packDir   = dirname($manifestPath);
         $destDir   = $targetDir . '/user_' . $this->sanitizeFolderName($manifest);
 
+        $this->logger->debug('Parsed add-on manifest.', [
+            'server' => $server->name,
+            'manifest_path' => $manifestPath,
+            'addon_name' => $manifest->name,
+            'addon_uuid' => $manifest->uuid,
+            'addon_type' => $manifest->type->value,
+            'addon_version' => $manifest->getVersionString(),
+            'destination' => $destDir,
+        ]);
+
         if (is_dir($destDir)) {
             $existingManifestPath = $destDir . '/manifest.json';
             if (file_exists($existingManifestPath)) {
@@ -197,6 +306,12 @@ class AddonInstaller
                 $cmp = $this->compareVersions($manifest->version, $existing->version);
 
                 if ($cmp === 0) {
+                    $this->logger->warning('Skipping install because same add-on version is already present.', [
+                        'server' => $server->name,
+                        'addon_name' => $manifest->name,
+                        'addon_uuid' => $manifest->uuid,
+                        'version' => $manifest->getVersionString(),
+                    ]);
                     throw new \RuntimeException(sprintf(
                         '"%s" version %s is already installed.',
                         $manifest->name,
@@ -205,6 +320,13 @@ class AddonInstaller
                 }
 
                 if ($cmp < 0) {
+                    $this->logger->warning('Skipping install because installed version is newer than uploaded add-on.', [
+                        'server' => $server->name,
+                        'addon_name' => $manifest->name,
+                        'addon_uuid' => $manifest->uuid,
+                        'uploaded_version' => $manifest->getVersionString(),
+                        'installed_version' => $existing->getVersionString(),
+                    ]);
                     throw new \RuntimeException(sprintf(
                         'Cannot install "%s" version %s — version %s is already installed. Remove it first to downgrade.',
                         $manifest->name,
@@ -218,6 +340,15 @@ class AddonInstaller
         }
 
         $this->copyDirectory($packDir, $destDir);
+
+        $this->logger->info('Add-on pack installed.', [
+            'server' => $server->name,
+            'addon_name' => $manifest->name,
+            'addon_uuid' => $manifest->uuid,
+            'addon_type' => $manifest->type->value,
+            'version' => $manifest->getVersionString(),
+            'destination' => $destDir,
+        ]);
 
         return [$manifest->name];
     }
@@ -239,6 +370,30 @@ class AddonInstaller
         }
 
         return null;
+    }
+
+    /**
+     * @return string[]
+     */
+    private function findManifestDirectoriesRecursively(string $baseDir): array
+    {
+        $dirs = [];
+
+        foreach (new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($baseDir, \FilesystemIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::SELF_FIRST
+        ) as $entry) {
+            if (!$entry->isDir()) {
+                continue;
+            }
+
+            $manifest = $entry->getPathname() . '/manifest.json';
+            if (file_exists($manifest)) {
+                $dirs[] = $entry->getPathname();
+            }
+        }
+
+        return array_values(array_unique($dirs));
     }
 
     private function resolveTargetDir(ServerInstance $server, AddonManifest $manifest): string
