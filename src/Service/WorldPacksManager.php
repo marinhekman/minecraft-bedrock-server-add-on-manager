@@ -55,11 +55,6 @@ class WorldPacksManager
         $file = $this->resolveFile($server, $type);
 
         if (!file_exists($file)) {
-            $this->logger->debug('World pack index file does not exist yet; using empty list.', [
-                'server' => $server->name,
-                'type' => $type->value,
-                'file' => $file,
-            ]);
             return [];
         }
 
@@ -104,13 +99,6 @@ class WorldPacksManager
             ));
         }
 
-        $this->logger->debug('Updated world pack index file.', [
-            'server' => $server->name,
-            'type' => $type->value,
-            'file' => $file,
-            'entry_count' => count($data),
-            'bytes_written' => $bytes,
-        ]);
     }
 
     private function getLastPhpErrorMessage(): string

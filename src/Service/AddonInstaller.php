@@ -72,12 +72,6 @@ class AddonInstaller
             'purpose' => 'mcaddon temp extraction directory',
         ]);
 
-        $this->logger->debug('Extracting mcaddon archive.', [
-            'server' => $server->name,
-            'archive' => basename($path),
-            'tmp_dir' => $tmpDir,
-        ]);
-
         try {
             if (!$zip->extractTo($tmpDir)) {
                 throw new \RuntimeException(sprintf(
@@ -89,12 +83,6 @@ class AddonInstaller
             }
             $zip->close();
 
-            $this->logger->debug('mcaddon archive extracted successfully.', [
-                'server' => $server->name,
-                'archive' => basename($path),
-                'tmp_dir' => $tmpDir,
-            ]);
-
             // Case 0: .mcaddon contains behavior_packs/ or resource_packs/ container
             // folders — each containing pack subfolders with their own manifest.json.
             // e.g.:
@@ -104,13 +92,10 @@ class AddonInstaller
             //   resource_packs/
             //       MyResourcePack/
             //           manifest.json
-            $topLevelDirs = 0;
             foreach (new \DirectoryIterator($tmpDir) as $entry) {
                 if (!$entry->isDir() || $entry->isDot()) {
                     continue;
                 }
-
-                $topLevelDirs++;
 
                 $folderName = strtolower($entry->getFilename());
 
@@ -167,21 +152,9 @@ class AddonInstaller
                 }
             }
 
-            $this->logger->debug('mcaddon container-folder scan completed.', [
-                'server' => $server->name,
-                'top_level_dirs_scanned' => $topLevelDirs,
-                'installed_count' => count($installed),
-                'error_count' => count($errors),
-            ]);
-
             // Case 1: .mcaddon contains .mcpack files
             if (empty($installed) && empty($errors)) {
                 $nestedMcPacks = glob($tmpDir . '/*.mcpack') ?: [];
-                $this->logger->debug('Scanning for nested mcpack archives in mcaddon.', [
-                    'server' => $server->name,
-                    'tmp_dir' => $tmpDir,
-                    'nested_mcpack_count' => count($nestedMcPacks),
-                ]);
 
                 foreach ($nestedMcPacks as $mcpack) {
                     try {
@@ -203,13 +176,11 @@ class AddonInstaller
 
             // Case 2: .mcaddon contains pack subfolders directly (each with manifest.json)
             if (empty($installed) && empty($errors)) {
-                $topLevelManifestCandidates = 0;
                 foreach (new \DirectoryIterator($tmpDir) as $entry) {
                     if (!$entry->isDir() || $entry->isDot()) {
                         continue;
                     }
                     if (file_exists($entry->getPathname() . '/manifest.json')) {
-                        $topLevelManifestCandidates++;
                         try {
                             $this->logger->debug('Installing pack from top-level folder in mcaddon.', [
                                 'server' => $server->name,
@@ -230,23 +201,12 @@ class AddonInstaller
                     }
                 }
 
-                $this->logger->debug('Top-level manifest scan completed.', [
-                    'server' => $server->name,
-                    'manifest_candidate_dirs' => $topLevelManifestCandidates,
-                    'installed_count' => count($installed),
-                    'error_count' => count($errors),
-                ]);
             }
 
             // Case 2b: .mcaddon contains one wrapper folder (or deeper nesting)
             // and manifests are not directly in the top-level pack folders.
             if (empty($installed) && empty($errors)) {
                 $packDirs = $this->findManifestDirectoriesRecursively($tmpDir);
-                $this->logger->debug('Recursive manifest scan completed.', [
-                    'server' => $server->name,
-                    'pack_dirs_found' => count($packDirs),
-                    'tmp_dir' => $tmpDir,
-                ]);
                 foreach ($packDirs as $packDir) {
                     try {
                         $this->logger->debug('Installing pack from recursively discovered manifest.', [
@@ -267,10 +227,6 @@ class AddonInstaller
 
             // Case 3: .mcaddon is itself a single pack (manifest.json at root)
             if (empty($installed) && empty($errors)) {
-                $this->logger->debug('Trying root folder as single-pack mcaddon.', [
-                    'server' => $server->name,
-                    'tmp_dir' => $tmpDir,
-                ]);
                 $installed = $this->installPackFolder($server, $tmpDir);
             }
 
@@ -312,11 +268,6 @@ class AddonInstaller
     /** @return string[] */
     private function installMcPack(ServerInstance $server, string $path): array
     {
-        $this->logger->debug('Installing mcpack archive.', [
-            'server' => $server->name,
-            'archive' => basename($path),
-        ]);
-
         $zip = $this->openZip($path);
 
         $tmpDir = sys_get_temp_dir() . '/mcpack_' . uniqid();
@@ -335,12 +286,6 @@ class AddonInstaller
                 ));
             }
             $zip->close();
-
-            $this->logger->debug('mcpack archive extracted successfully.', [
-                'server' => $server->name,
-                'archive' => basename($path),
-                'tmp_dir' => $tmpDir,
-            ]);
 
             return $this->installPackFolder($server, $tmpDir);
         } finally {
@@ -367,16 +312,6 @@ class AddonInstaller
         $targetDir = $this->resolveTargetDir($server, $manifest);
         $packDir   = dirname($manifestPath);
         $destDir   = $targetDir . '/user_' . $this->sanitizeFolderName($manifest);
-
-        $this->logger->debug('Parsed add-on manifest.', [
-            'server' => $server->name,
-            'manifest_path' => $manifestPath,
-            'addon_name' => $manifest->name,
-            'addon_uuid' => $manifest->uuid,
-            'addon_type' => $manifest->type->value,
-            'addon_version' => $manifest->getVersionString(),
-            'destination' => $destDir,
-        ]);
 
         if (is_dir($destDir)) {
             $existingManifestPath = $destDir . '/manifest.json';
@@ -415,10 +350,6 @@ class AddonInstaller
                 }
             }
 
-            $this->logger->debug('Destination pack directory already exists and will be replaced.', [
-                'server' => $server->name,
-                'destination' => $destDir,
-            ]);
             $this->removeDirectory($destDir, [
                 'server' => $server->name,
                 'purpose' => 'existing destination pack directory',
@@ -536,9 +467,6 @@ class AddonInstaller
             'purpose' => 'destination add-on directory',
         ]);
 
-        $copiedFiles = 0;
-        $createdDirs = 0;
-
         foreach (new \RecursiveIteratorIterator(
             new \RecursiveDirectoryIterator($src, \FilesystemIterator::SKIP_DOTS),
             \RecursiveIteratorIterator::SELF_FIRST
@@ -549,7 +477,6 @@ class AddonInstaller
                     'purpose' => 'add-on subdirectory',
                     'directory' => $destPath,
                 ]);
-                $createdDirs++;
             } else {
                 if (!@copy($item->getPathname(), $destPath)) {
                     throw new \RuntimeException(sprintf(
@@ -559,16 +486,9 @@ class AddonInstaller
                         $this->getLastPhpErrorMessage(),
                     ));
                 }
-                $copiedFiles++;
             }
         }
 
-        $this->logger->debug('Addon directory copy completed.', $context + [
-            'source' => $src,
-            'destination' => $dst,
-            'copied_files' => $copiedFiles,
-            'created_dirs' => $createdDirs,
-        ]);
     }
 
     private function removeDirectory(string $dir, array $context = []): void
@@ -620,9 +540,6 @@ class AddonInstaller
             ));
         }
 
-        $this->logger->debug('Created directory for add-on processing.', $context + [
-            'directory' => $dir,
-        ]);
     }
 
     private function getLastPhpErrorMessage(): string
