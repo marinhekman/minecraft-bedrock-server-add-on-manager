@@ -36,6 +36,14 @@ RUN set -eux; \
 		redis \
 	;
 
+# if you want to debug on prod, enable below lines:
+##   Also check ./frankenphp/conf.d/app.prod.ini
+#ENV XDEBUG_MODE=debug
+#RUN set -eux; \
+#	install-php-extensions \
+#		xdebug \
+#	;
+
 # https://getcomposer.org/doc/03-cli.md#composer-allow-superuser
 ENV COMPOSER_ALLOW_SUPERUSER=1
 
@@ -57,7 +65,6 @@ ENTRYPOINT ["docker-entrypoint"]
 
 HEALTHCHECK --start-period=60s CMD curl http://localhost:2019/metrics --silent --show-error --fail --output /dev/null || exit 1
 CMD [ "frankenphp", "run", "--config", "/etc/frankenphp/Caddyfile" ]
-
 
 # Prod FrankenPHP image
 FROM frankenphp_base AS frankenphp_prod
