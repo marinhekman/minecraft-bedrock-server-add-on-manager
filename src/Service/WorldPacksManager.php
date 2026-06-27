@@ -4,9 +4,14 @@ namespace App\Service;
 
 use App\Model\AddonType;
 use App\Model\ServerInstance;
+use Psr\Log\LoggerInterface;
 
 class WorldPacksManager
 {
+    public function __construct(
+        private readonly LoggerInterface $logger,
+    ) {}
+
     /**
      * Returns the UUIDs of all enabled packs for a given type.
      *
@@ -50,6 +55,11 @@ class WorldPacksManager
         $file = $this->resolveFile($server, $type);
 
         if (!file_exists($file)) {
+            $this->logger->debug('World pack index file does not exist yet; using empty list.', [
+                'server' => $server->name,
+                'type' => $type->value,
+                'file' => $file,
+            ]);
             return [];
         }
 
@@ -68,13 +78,49 @@ class WorldPacksManager
         $dir  = dirname($file);
 
         if (!is_dir($dir)) {
-            mkdir($dir, 0775, true);
+            if (!@mkdir($dir, 0775, true) && !is_dir($dir)) {
+                throw new \RuntimeException(sprintf(
+                    'Failed to create world metadata directory "%s". %s',
+                    $dir,
+                    $this->getLastPhpErrorMessage(),
+                ));
+            }
+            $this->logger->info('Created world metadata directory for add-on enable/disable state.', [
+                'server' => $server->name,
+                'type' => $type->value,
+                'directory' => $dir,
+            ]);
         }
 
-        file_put_contents(
+        $bytes = @file_put_contents(
             $file,
             json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n"
         );
+        if ($bytes === false) {
+            throw new \RuntimeException(sprintf(
+                'Failed to write world pack index file "%s". %s',
+                $file,
+                $this->getLastPhpErrorMessage(),
+            ));
+        }
+
+        $this->logger->debug('Updated world pack index file.', [
+            'server' => $server->name,
+            'type' => $type->value,
+            'file' => $file,
+            'entry_count' => count($data),
+            'bytes_written' => $bytes,
+        ]);
+    }
+
+    private function getLastPhpErrorMessage(): string
+    {
+        $last = error_get_last();
+        if (!is_array($last) || !isset($last['message'])) {
+            return 'No additional PHP error details available.';
+        }
+
+        return $last['message'];
     }
 
     private function resolveFile(ServerInstance $server, AddonType $type): string
