@@ -84,6 +84,7 @@ ARGS=(
     --name "$CONTAINER_NAME"
     -e EULA=TRUE
     -e ALLOW_CHEATS=true
+    -e TRANSPORT=raknet
     --restart=unless-stopped
     -e GAMEMODE=creative
     --memory="$MEMORY"
