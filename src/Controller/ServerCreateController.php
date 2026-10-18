@@ -74,6 +74,7 @@ class ServerCreateController extends AbstractController
             $env = [
                 'EULA=TRUE',
                 'MEMORY_PROFILE=' . $profile,
+                'TRANSPORT=raknet',
             ];
             if ($seed !== '') {
                 $env[] = 'LEVEL_SEED=' . $seed;

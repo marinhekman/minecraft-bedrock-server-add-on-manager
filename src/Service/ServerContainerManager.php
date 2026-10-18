@@ -68,6 +68,7 @@ final class ServerContainerManager
             'Env'   => [
                 'EULA=TRUE',
                 'MEMORY_PROFILE=' . $profile,
+                'TRANSPORT=raknet',
             ],
             'HostConfig' => [
                 'NetworkMode'   => 'mc-net',
